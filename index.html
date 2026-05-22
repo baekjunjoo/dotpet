@@ -202,6 +202,83 @@
   }
   .splash .footer a { color: var(--accent-dark); text-decoration: underline; }
 
+  /* ============================================================
+     Tamagotchi device frame
+     ============================================================ */
+  .tama-device {
+    position: relative;
+    width: 100%;
+    max-width: 320px;
+    aspect-ratio: 400/450;
+    margin: 0 auto 20px;
+    filter: drop-shadow(0 8px 18px rgba(15,20,30,.18));
+  }
+  .tama-device.tama-sm { max-width: 240px; margin-bottom: 16px; }
+  .tama-frame {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+  /* Screen position matches SVG rect: x=104, y=116, w=192, h=170 on 400x450 viewBox */
+  .tama-screen {
+    position: absolute;
+    top: 25.8%;
+    left: 26%;
+    width: 48%;
+    height: 37.8%;
+    background: #0a1020;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    border-radius: 4px;
+    box-shadow: inset 0 2px 6px rgba(0,0,0,0.4);
+  }
+  .tama-screen .pet-svg-wrap {
+    width: 86%; height: 86%;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .tama-screen .pet-svg-wrap svg {
+    width: 100%; height: 100%; object-fit: contain;
+  }
+  .tama-screen .tama-welcome {
+    color: #f5e9d4;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    text-align: center;
+    line-height: 1.4;
+    padding: 8px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    animation: tamaBlink 2s ease-in-out infinite;
+  }
+  @keyframes tamaBlink {
+    0%, 100% { opacity: 0.95; }
+    50% { opacity: 0.6; }
+  }
+  /* Subtle pet idle animation */
+  @keyframes petBreathe {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-2px); }
+  }
+  .tama-screen .pet-svg-wrap svg { animation: petBreathe 2.4s ease-in-out infinite; }
+
+  /* Tama device interactive (when buttons can be pressed via key map) */
+  .tama-btn-hint {
+    position: absolute;
+    font-size: 10px;
+    font-weight: 700;
+    color: rgba(255,255,255,0.9);
+    text-shadow: 0 1px 2px rgba(0,0,0,0.4);
+    pointer-events: none;
+    text-align: center;
+  }
+  .tama-btn-hint.b1 { left: 31%; bottom: 17%; }
+  .tama-btn-hint.b2 { left: 42%; bottom: 11%; }
+  .tama-btn-hint.b3 { left: 53%; bottom: 11%; }
+  .tama-btn-hint.b4 { left: 64%; bottom: 17%; }
+
   /* Continue with existing pet card */
   .continue-card {
     background: var(--care-soft); padding: 14px 16px;
@@ -271,17 +348,14 @@
   }
 
   .pet-stage-vis {
-    background: white;
+    background: transparent;
     border-radius: var(--radius);
-    padding: 24px;
+    padding: 16px 0 0;
     display: flex; align-items: center; justify-content: center;
     min-height: 220px;
     margin-bottom: 20px;
   }
-  .pet-stage-vis svg {
-    width: 100%; max-width: 280px; height: auto;
-    image-rendering: pixelated;
-  }
+  .pet-stage-vis .tama-device { margin-bottom: 0; }
 
   .pet-speech {
     background: white;
@@ -670,7 +744,12 @@
 
 <!-- Splash / onboarding -->
 <div class="splash" id="splash" role="dialog" aria-labelledby="splash-title" aria-modal="true">
-  <div class="hero" aria-hidden="true">🥚</div>
+  <div class="tama-device tama-sm" aria-hidden="true">
+    <div class="tama-frame" id="splash-tama-frame"></div>
+    <div class="tama-screen">
+      <div class="tama-welcome">DotPet<br/>♥ Press Start ♥</div>
+    </div>
+  </div>
   <h1 id="splash-title">DotPet</h1>
   <p class="tagline" id="splash-tag">A tactile virtual pet you can raise with your Dot Pad — feed it, play with it, watch it grow.</p>
   <div class="card">
@@ -678,7 +757,7 @@
     <div class="card-title" id="card-title-fresh">Start a new pet</div>
     <label for="pet-name-input" id="lbl-name">Your pet's name</label>
     <input type="text" id="pet-name-input" maxlength="16" placeholder="e.g. Boto" autocomplete="off" />
-    <button class="start" id="splash-start" type="button" aria-label="Start the game">▶ Hatch the egg</button>
+    <button class="start" id="splash-start" type="button" aria-label="Start the game">▶ Meet your pet</button>
     <div class="footer">
       <span id="splash-foot">Need keys for Azure neural voice? Open <a href="#" id="open-settings-link">Settings</a> after hatching.</span>
     </div>
@@ -721,8 +800,17 @@
       </div>
       <div class="pet-mood-icon" id="pet-mood-icon" aria-hidden="true">🥚</div>
     </div>
-    <div class="pet-stage-vis" id="pet-stage-vis" role="img" aria-label="Pet visualization">
-      <!-- SVG injected by JS -->
+    <div class="pet-stage-vis" id="pet-stage-vis" role="img" aria-label="Pet visualization inside device">
+      <div class="tama-device">
+        <div class="tama-frame" id="main-tama-frame"></div>
+        <div class="tama-screen">
+          <div class="pet-svg-wrap" id="pet-svg-wrap"></div>
+        </div>
+        <div class="tama-btn-hint b1" aria-hidden="true">F1</div>
+        <div class="tama-btn-hint b2" aria-hidden="true">F2</div>
+        <div class="tama-btn-hint b3" aria-hidden="true">F3</div>
+        <div class="tama-btn-hint b4" aria-hidden="true">F4</div>
+      </div>
     </div>
     <div class="pet-speech" role="region" aria-labelledby="speech-label" aria-live="polite">
       <div class="label" id="speech-label">Pet says</div>
@@ -948,7 +1036,7 @@ const I18N = {
     cardTitleContinue: 'Continue your pet',
     lblName: "Your pet's name",
     placeholderName: 'e.g. Boto',
-    btnStart: '▶ Hatch the egg',
+    btnStart: '▶ Meet your pet',
     btnContinue: '▶ Continue',
     btnNewPet: 'Start fresh',
     footHint: 'Need keys for Azure neural voice? Open Settings after hatching.',
@@ -1040,7 +1128,7 @@ const I18N = {
     mgPlayAgain: 'Play again',
     toastSaved: 'Saved',
     toastWelcome: name => `Welcome back, ${name}!`,
-    toastFirstHatch: 'A new pet has been born!',
+    toastFirstHatch: 'Your pet is ready to meet you!',
     toastConnected: 'Dot Pad connected',
     toastDisconnected: 'Dot Pad disconnected',
     toastResetConfirm: 'Reset pet — type RESET in confirmation prompt',
@@ -1056,7 +1144,7 @@ const I18N = {
     logSleep: 'Put to sleep',
     logWake: 'Woke up',
     logEvolve: 'Evolved',
-    logHatch: 'Hatched',
+    logHatch: 'Met your pet',
   },
   ko: {
     pageTitle: '닷펫 — 닷패드 가상 펫',
@@ -1066,7 +1154,7 @@ const I18N = {
     cardTitleContinue: '이어서 돌보기',
     lblName: '펫의 이름',
     placeholderName: '예: 보토',
-    btnStart: '▶ 알 부화시키기',
+    btnStart: '▶ 펫 만나기',
     btnContinue: '▶ 이어 하기',
     btnNewPet: '새 펫 시작',
     footHint: 'Azure 신경망 음성 키는 부화 후 설정에서 입력하면 돼요.',
@@ -1157,7 +1245,7 @@ const I18N = {
     mgPlayAgain: '한번 더',
     toastSaved: '저장됨',
     toastWelcome: name => `${name}, 다시 만나서 반가워요!`,
-    toastFirstHatch: '새 펫이 태어났어요!',
+    toastFirstHatch: '펫이 당신을 기다리고 있어요!',
     toastConnected: '닷패드 연결됨',
     toastDisconnected: '닷패드 연결 끊김',
     toastResetConfirm: '펫 리셋 — 확인창에 RESET 입력하세요',
@@ -1173,7 +1261,7 @@ const I18N = {
     logSleep: '재웠음',
     logWake: '깨움',
     logEvolve: '진화',
-    logHatch: '부화',
+    logHatch: '만남',
   }
 };
 function T() { return I18N[state.lang]; }
@@ -1196,24 +1284,34 @@ const SPEED = {
 const SAVE_KEY = 'dotpet:save:v1';
 const SETTINGS_KEY = 'dotpet:settings:v1';
 
-const defaultPet = () => ({
-  name: 'Boto',
-  bornAt: Date.now(),
-  lastUpdate: Date.now(),
-  stage: 'egg',        // egg | baby | child | adult
-  adultType: null,     // 'happy' | 'normal' | 'sad' (set on adult evolve)
-  stats: {
-    hunger: 60,    // higher = more full; decays down
-    happy: 60,
-    clean: 80,
-    energy: 80,
-    love: 50,
-  },
-  loveTotal: 0,        // sum of love increments — for adult branching
-  asleep: false,
-  sickSince: null,
-  totalActions: 0,
-});
+// Note: pet starts at CHILD stage (skip egg/baby). bornAt is set so computeStage
+// reflects child stage at start, and evolution still proceeds forward to adult.
+const defaultPet = () => {
+  const now = Date.now();
+  // Backdate bornAt so we're already in the child range for current speed.
+  const childGameHours = SPEED[state.speed].evolveHoursFromHatch.child;
+  const mult = SPEED[state.speed].mult;
+  const realSecondsForChildStart = (childGameHours * 3600) / mult;
+  const bornAt = now - (realSecondsForChildStart + 60) * 1000; // 60s buffer past child threshold
+  return {
+    name: 'Boto',
+    bornAt,
+    lastUpdate: now,
+    stage: 'child',      // child | adult (no longer egg/baby)
+    adultType: null,
+    stats: {
+      hunger: 70,
+      happy: 70,
+      clean: 90,
+      energy: 90,
+      love: 50,
+    },
+    loveTotal: 0,
+    asleep: false,
+    sickSince: null,
+    totalActions: 0,
+  };
+};
 
 const state = {
   lang: 'en',
@@ -1643,10 +1741,14 @@ function actHelp() { SFX.stat(); saySpeech(T().keyHelp); }
 // ============================================================
 // Evolution checker — called periodically
 // ============================================================
+// Stage ordering for "no downgrade" guard
+const STAGE_ORDER = { egg: 0, baby: 1, child: 2, adult: 3 };
 function checkEvolution() {
   if (!state.pet) return;
   const newStage = computeStage();
   if (newStage === state.pet.stage) return;
+  // Never downgrade — if computed stage is "behind" current (e.g. after speed change), keep current
+  if (STAGE_ORDER[newStage] <= STAGE_ORDER[state.pet.stage]) return;
   // Stage change!
   const oldStage = state.pet.stage;
   state.pet.stage = newStage;
@@ -1787,34 +1889,111 @@ function getMoodIcon() {
 }
 
 // ============================================================
-// SVG pet visualization (screen)
+// Tamagotchi device frame SVG — orange egg shell with yellow inner frame
+// ============================================================
+function tamaFrameSvg() {
+  return `<svg viewBox="0 0 400 450" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <defs>
+      <linearGradient id="tama-orange" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#ffa776"/>
+        <stop offset="55%" stop-color="#ff7a45"/>
+        <stop offset="100%" stop-color="#e85a2a"/>
+      </linearGradient>
+      <radialGradient id="tama-shine" cx="35%" cy="20%" r="50%">
+        <stop offset="0%" stop-color="#ffd0a9" stop-opacity="0.65"/>
+        <stop offset="100%" stop-color="#ffd0a9" stop-opacity="0"/>
+      </radialGradient>
+      <linearGradient id="tama-white" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#ffffff"/>
+        <stop offset="100%" stop-color="#ededed"/>
+      </linearGradient>
+    </defs>
+    <!-- Outer egg body (orange) -->
+    <ellipse cx="200" cy="225" rx="180" ry="215" fill="url(#tama-orange)" stroke="#c5481e" stroke-width="4"/>
+    <!-- White bottom section -->
+    <path d="M 30 285 Q 200 245, 370 285 L 370 360 C 370 405, 290 440, 200 440 C 110 440, 30 405, 30 360 Z"
+          fill="url(#tama-white)" stroke="#c5481e" stroke-width="3"/>
+    <!-- Speckles on white bottom -->
+    <g fill="#a8acb4" opacity="0.6">
+      <circle cx="60" cy="340" r="1.8"/>
+      <circle cx="85" cy="370" r="1.5"/>
+      <circle cx="110" cy="395" r="2"/>
+      <circle cx="135" cy="415" r="1.6"/>
+      <circle cx="160" cy="425" r="1.8"/>
+      <circle cx="195" cy="430" r="1.5"/>
+      <circle cx="230" cy="425" r="1.7"/>
+      <circle cx="260" cy="415" r="1.6"/>
+      <circle cx="290" cy="395" r="2"/>
+      <circle cx="315" cy="370" r="1.5"/>
+      <circle cx="340" cy="340" r="1.8"/>
+      <circle cx="75" cy="395" r="1.3"/>
+      <circle cx="325" cy="395" r="1.3"/>
+      <circle cx="175" cy="380" r="1.3"/>
+      <circle cx="215" cy="395" r="1.3"/>
+    </g>
+    <!-- Yellow zigzag/cracked egg shell around screen -->
+    <path d="M 78 105
+             L 95 88 L 118 100 L 140 86 L 162 100 L 185 86 L 208 100 L 232 86 L 256 100 L 280 86 L 305 100 L 322 118
+             L 318 145 L 326 170 L 318 195 L 326 220 L 320 245 L 326 270 L 314 292
+             L 296 308 L 272 296 L 248 308 L 224 296 L 200 308 L 176 296 L 152 308 L 128 296 L 104 308 L 86 290
+             L 80 268 L 74 245 L 80 222 L 74 198 L 80 175 L 74 150 L 80 125 Z"
+          fill="#ffd84a" stroke="#c5481e" stroke-width="2.5" stroke-linejoin="round"/>
+    <!-- Dark screen -->
+    <rect x="104" y="116" width="192" height="170" rx="6" fill="#0a1020"/>
+    <rect x="104" y="116" width="192" height="170" rx="6" fill="none" stroke="#7a3614" stroke-width="2"/>
+    <!-- 4 yellow buttons in arc at bottom -->
+    <circle cx="138" cy="358" r="16" fill="#ffd84a" stroke="#c5481e" stroke-width="2.5"/>
+    <circle cx="178" cy="376" r="16" fill="#ffd84a" stroke="#c5481e" stroke-width="2.5"/>
+    <circle cx="222" cy="376" r="16" fill="#ffd84a" stroke="#c5481e" stroke-width="2.5"/>
+    <circle cx="262" cy="358" r="16" fill="#ffd84a" stroke="#c5481e" stroke-width="2.5"/>
+    <!-- Side orange capsule buttons -->
+    <rect x="45" y="300" width="22" height="44" rx="11" fill="#ff7a45" stroke="#c5481e" stroke-width="2.5"/>
+    <rect x="333" y="300" width="22" height="44" rx="11" fill="#ff7a45" stroke="#c5481e" stroke-width="2.5"/>
+    <!-- Top shine highlight -->
+    <ellipse cx="200" cy="225" rx="170" ry="205" fill="url(#tama-shine)"/>
+    <ellipse cx="150" cy="75" rx="55" ry="22" fill="#ffd0a9" opacity="0.7"/>
+  </svg>`;
+}
+function injectTamaFrames() {
+  const a = document.getElementById('splash-tama-frame');
+  const b = document.getElementById('main-tama-frame');
+  if (a && !a.innerHTML) a.innerHTML = tamaFrameSvg();
+  if (b && !b.innerHTML) b.innerHTML = tamaFrameSvg();
+}
+
+// ============================================================
+// SVG pet visualization (rendered inside Tama screen — LCD color theme)
 // ============================================================
 function renderPetSvg() {
-  const c = document.getElementById('pet-stage-vis');
-  if (!c) return;
+  const wrap = document.getElementById('pet-svg-wrap');
+  if (!wrap) return;
   const p = state.pet;
   const stage = computeStage();
   const mood = p.asleep ? 'sleep' : p.sickSince ? 'sick' :
     (p.stats.happy >= 70 && p.stats.love >= 60) ? 'happy' :
     (p.stats.happy < 30 || p.stats.hunger < 25) ? 'sad' : 'idle';
-  c.innerHTML = SVG_STAGES[stage]
+  wrap.innerHTML = SVG_STAGES[stage]
     ? SVG_STAGES[stage](mood, p.adultType)
-    : SVG_STAGES.egg(mood);
+    : SVG_STAGES.child(mood);
 }
 
-// Pet stage SVG — pixel-style "Game Boy" aesthetic, 14x14 grid
-function pxGrid(grid, color = '#ff7a45', bg = 'transparent', scale = 18) {
-  // grid: 2D array of 0/1/2 (0=bg, 1=fg, 2=accent)
+// Pet stage SVG — pixel-style LCD inside dark Tama screen
+// Palette: body = cream, accent = warm yellow, eyes/mouth = dark, highlight = pale cream
+const LCD = { body: '#f5e9d4', accent: '#ffd84a', eye: '#0a1020', highlight: '#fff5e0' };
+function pxGrid(grid, scale = 18) {
   const rows = grid.length, cols = grid[0].length;
   let svg = `<svg viewBox="0 0 ${cols * scale} ${rows * scale}" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">`;
-  if (bg !== 'transparent') svg += `<rect width="100%" height="100%" fill="${bg}"/>`;
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       const v = grid[r][c];
-      if (v === 1) svg += `<rect x="${c*scale}" y="${r*scale}" width="${scale}" height="${scale}" fill="${color}"/>`;
-      else if (v === 2) svg += `<rect x="${c*scale}" y="${r*scale}" width="${scale}" height="${scale}" fill="#d65a2a"/>`;
-      else if (v === 3) svg += `<rect x="${c*scale}" y="${r*scale}" width="${scale}" height="${scale}" fill="#0a0c12"/>`;
-      else if (v === 4) svg += `<rect x="${c*scale}" y="${r*scale}" width="${scale}" height="${scale}" fill="#ffd9c2"/>`;
+      if (v === 0) continue;
+      let fill;
+      if (v === 1) fill = LCD.body;
+      else if (v === 2) fill = LCD.accent;
+      else if (v === 3) fill = LCD.eye;
+      else if (v === 4) fill = LCD.highlight;
+      else fill = LCD.body;
+      svg += `<rect x="${c*scale}" y="${r*scale}" width="${scale}" height="${scale}" fill="${fill}"/>`;
     }
   }
   svg += `</svg>`;
@@ -2371,7 +2550,7 @@ function hideSplashAndStart() {
     T().petWakeAdult(state.pet.name);
   saySpeech(initialMsg, { npc: state.pet.stage !== 'egg' });
   if (state.pet.totalActions === 0) {
-    SFX.hatch();
+    SFX.happy();
     logEntry(T().logHatch);
     showToast(T().toastFirstHatch, 'care');
   } else {
@@ -2456,6 +2635,7 @@ function handleKey(e) {
 // ============================================================
 function init() {
   loadSettings();
+  injectTamaFrames();
   applyI18n();
   // Detect existing pet
   const saved = loadPet();
@@ -2467,10 +2647,7 @@ function init() {
     const nm = document.getElementById('pet-name-input').value.trim();
     state.pet = defaultPet();
     state.pet.name = nm || (state.lang === 'ko' ? '보토' : 'Boto');
-    state.pet.bornAt = Date.now();
-    state.pet.lastUpdate = Date.now();
-    state.pet.stats.hunger = 70; state.pet.stats.happy = 70;
-    state.pet.stats.clean = 90; state.pet.stats.energy = 90; state.pet.stats.love = 50;
+    // defaultPet already sets bornAt to put us in child stage + balanced stats
     savePet();
     hideSplashAndStart();
   });
