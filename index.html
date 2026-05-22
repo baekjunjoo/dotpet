@@ -1,0 +1,2539 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>DotPet — Tactile Virtual Pet for Dot Pad</title>
+<meta name="description" content="A tactile virtual pet game designed for visually impaired users, featuring full Dot Pad braille display integration, voice narration, and SFX-rich gameplay." />
+<link rel="preconnect" href="https://cdn.jsdelivr.net" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css" />
+<style>
+  /* ============================================================
+     DotPet — WCAG 2.1 AA · Heap-light theme with warm pastel
+     ============================================================ */
+  :root {
+    --bg:           #ffffff;
+    --bg-alt:       #f7f8fb;
+    --bg-card:      #ffffff;
+    --border:       #e2e6ee;
+    --border-strong:#c5cdda;
+    --text:         #0a0c12;
+    --text-mute:    #4a5160;
+    --text-dim:     #6d7585;
+    --accent:       #ff7a45;       /* warm orange — pet warmth */
+    --accent-dark:  #d65a2a;
+    --accent-soft:  #fff2eb;
+    --care:         #2e8a5c;       /* green — health/care positive */
+    --care-soft:    #e6f4ec;
+    --warn:         #c54a00;       /* warning amber */
+    --warn-soft:    #fff3e6;
+    --danger:       #b21f1f;       /* critical needs */
+    --danger-soft:  #fae5e5;
+    --hunger:       #d9821c;
+    --happy:        #b54a9c;
+    --clean:        #2a7fc9;
+    --energy:       #6a55c7;
+    --love:         #c93a5e;
+    --focus:        #1058d9;
+    --shadow-card:  0 1px 2px rgba(15,20,30,.05), 0 0 0 1px rgba(15,20,30,.04);
+    --shadow-pop:   0 8px 24px rgba(15,20,30,.12);
+    --radius-sm:    8px;
+    --radius:       14px;
+    --radius-lg:    22px;
+    --pet-bg:       #fff8f3;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+  }
+
+  /* WCAG: focus-visible — visible outline on keyboard nav */
+  :focus { outline: none; }
+  :focus-visible {
+    outline: 3px solid var(--focus);
+    outline-offset: 2px;
+  }
+  button:focus-visible, [role="button"]:focus-visible, input:focus-visible, select:focus-visible {
+    outline: 3px solid var(--focus);
+    outline-offset: 2px;
+  }
+
+  /* Skip link */
+  .skip-link {
+    position: absolute; top: -40px; left: 8px;
+    background: var(--text); color: var(--bg);
+    padding: 8px 14px; border-radius: 6px;
+    text-decoration: none; z-index: 200;
+  }
+  .skip-link:focus { top: 8px; }
+
+  /* sr-only — screen reader only */
+  .sr-only {
+    position: absolute; width: 1px; height: 1px;
+    padding: 0; margin: -1px; overflow: hidden;
+    clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+  }
+
+  /* ============================================================
+     Header
+     ============================================================ */
+  .lab-header {
+    position: sticky; top: 0; left: 0; right: 0; z-index: 60;
+    background: rgba(255,255,255,0.94);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 24px;
+    display: flex; align-items: center; gap: 12px;
+    flex-wrap: wrap;
+  }
+  .lab-title {
+    font-size: 17px; font-weight: 700; color: var(--text);
+    display: flex; align-items: center; gap: 8px;
+    letter-spacing: -0.01em;
+  }
+  .lab-title .pet-icon {
+    width: 28px; height: 28px;
+    background: var(--accent-soft);
+    border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 16px;
+  }
+  .lab-spacer { flex: 1; }
+  .lab-btn {
+    background: var(--bg-alt);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    font-size: 13px; font-weight: 600;
+    cursor: pointer;
+    transition: background .15s, border-color .15s;
+    font-family: inherit;
+  }
+  .lab-btn:hover { background: var(--accent-soft); border-color: var(--accent); }
+  .lab-btn.active { background: var(--accent); color: white; border-color: var(--accent); }
+  .lab-btn.danger { color: var(--danger); }
+  .lab-btn.danger:hover { background: var(--danger-soft); border-color: var(--danger); }
+  .lab-btn[aria-pressed="true"] { background: var(--accent); color: white; border-color: var(--accent); }
+
+  .conn-status {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; font-weight: 600;
+    color: var(--text-mute);
+  }
+  .conn-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--text-dim);
+  }
+  .conn-dot.connected { background: var(--care); }
+
+  /* ============================================================
+     Splash / Onboarding
+     ============================================================ */
+  .splash {
+    position: fixed; inset: 0; z-index: 150;
+    background: linear-gradient(180deg, #fff8f3 0%, #ffeede 100%);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 32px 20px;
+    transition: opacity .3s, visibility .3s;
+  }
+  .splash.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+  .splash .hero {
+    font-size: 64px; line-height: 1;
+    margin-bottom: 24px;
+    filter: drop-shadow(0 4px 12px rgba(214,90,42,.2));
+  }
+  .splash h1 {
+    font-size: 32px; font-weight: 800;
+    color: var(--text);
+    margin: 0 0 12px; letter-spacing: -0.02em;
+    text-align: center;
+  }
+  .splash .tagline {
+    font-size: 17px; color: var(--text-mute);
+    text-align: center; max-width: 540px;
+    margin: 0 0 32px;
+  }
+  .splash .card {
+    background: white; border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-pop);
+    padding: 28px; max-width: 480px; width: 100%;
+  }
+  .splash .card-title {
+    font-size: 14px; font-weight: 700;
+    color: var(--text-mute); text-transform: uppercase;
+    letter-spacing: 0.04em; margin: 0 0 14px;
+  }
+  .splash label {
+    display: block; font-size: 13px; font-weight: 600;
+    color: var(--text); margin: 0 0 6px;
+  }
+  .splash input[type="text"] {
+    width: 100%; padding: 12px 14px;
+    border: 1.5px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    font-size: 16px; font-family: inherit;
+    color: var(--text); background: white;
+    margin: 0 0 16px;
+  }
+  .splash input[type="text"]:focus {
+    border-color: var(--accent);
+  }
+  .splash .start {
+    width: 100%; padding: 14px;
+    background: var(--accent); color: white;
+    border: none; border-radius: var(--radius);
+    font-size: 17px; font-weight: 700;
+    cursor: pointer; font-family: inherit;
+    transition: background .15s;
+  }
+  .splash .start:hover { background: var(--accent-dark); }
+  .splash .footer {
+    margin-top: 20px; font-size: 13px;
+    color: var(--text-dim); text-align: center;
+  }
+  .splash .footer a { color: var(--accent-dark); text-decoration: underline; }
+
+  /* Continue with existing pet card */
+  .continue-card {
+    background: var(--care-soft); padding: 14px 16px;
+    border-radius: var(--radius); margin-bottom: 16px;
+    border-left: 4px solid var(--care);
+  }
+  .continue-card .info { font-size: 13px; color: var(--text-mute); }
+  .continue-card .pet-name { font-size: 17px; font-weight: 700; color: var(--text); }
+  .continue-card .stage { font-size: 13px; color: var(--care); font-weight: 600; }
+  .continue-row { display: flex; gap: 10px; margin-top: 10px; }
+  .continue-row button {
+    flex: 1; padding: 10px; border-radius: 10px;
+    border: 1.5px solid var(--care); color: var(--care);
+    background: white; font-weight: 700; font-size: 14px;
+    cursor: pointer; font-family: inherit;
+  }
+  .continue-row button:hover { background: var(--care); color: white; }
+  .continue-row button.danger { border-color: var(--danger); color: var(--danger); }
+  .continue-row button.danger:hover { background: var(--danger); color: white; }
+
+  /* ============================================================
+     Main game layout
+     ============================================================ */
+  main {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 24px;
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    gap: 24px;
+  }
+  @media (max-width: 880px) {
+    main { grid-template-columns: 1fr; padding: 16px; }
+  }
+
+  .pet-card {
+    background: var(--pet-bg);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-card);
+    padding: 24px;
+    position: relative;
+    overflow: hidden;
+  }
+  .pet-header {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    margin-bottom: 16px;
+  }
+  .pet-name-display {
+    font-size: 24px; font-weight: 800; color: var(--text);
+    letter-spacing: -0.01em;
+  }
+  .pet-stage-chip {
+    display: inline-block;
+    background: white; color: var(--text-mute);
+    padding: 4px 12px; border-radius: 999px;
+    font-size: 12px; font-weight: 700;
+    letter-spacing: 0.04em; text-transform: uppercase;
+    border: 1px solid var(--border);
+    margin-top: 4px;
+  }
+  .pet-mood-icon {
+    font-size: 28px;
+    background: white; border-radius: 999px;
+    width: 56px; height: 56px;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: var(--shadow-card);
+  }
+
+  .pet-stage-vis {
+    background: white;
+    border-radius: var(--radius);
+    padding: 24px;
+    display: flex; align-items: center; justify-content: center;
+    min-height: 220px;
+    margin-bottom: 20px;
+  }
+  .pet-stage-vis svg {
+    width: 100%; max-width: 280px; height: auto;
+    image-rendering: pixelated;
+  }
+
+  .pet-speech {
+    background: white;
+    border-radius: var(--radius);
+    padding: 14px 18px;
+    margin-bottom: 18px;
+    border-left: 4px solid var(--accent);
+    position: relative;
+    min-height: 60px;
+  }
+  .pet-speech .label {
+    font-size: 11px; font-weight: 700;
+    color: var(--accent); letter-spacing: 0.05em;
+    text-transform: uppercase; margin-bottom: 2px;
+  }
+  .pet-speech .text {
+    font-size: 16px; color: var(--text);
+    line-height: 1.5;
+  }
+  .pet-speech .replay-btn {
+    position: absolute; top: 8px; right: 8px;
+    background: var(--accent-soft); color: var(--accent-dark);
+    border: none; border-radius: 6px;
+    font-size: 11px; font-weight: 700;
+    padding: 4px 8px; cursor: pointer;
+    font-family: inherit;
+  }
+  .pet-speech .replay-btn:hover { background: var(--accent); color: white; }
+
+  /* Action buttons */
+  .actions-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  @media (max-width: 540px) {
+    .actions-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+  .action-btn {
+    background: white;
+    border: 2px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px 8px;
+    cursor: pointer; font-family: inherit;
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    transition: transform .12s, border-color .15s, background .15s;
+    color: var(--text);
+  }
+  .action-btn:hover {
+    transform: translateY(-2px);
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+  .action-btn:active { transform: translateY(0); }
+  .action-btn[disabled] {
+    opacity: 0.4; cursor: not-allowed;
+    transform: none !important;
+  }
+  .action-btn .ic {
+    font-size: 28px; line-height: 1;
+  }
+  .action-btn .lbl {
+    font-size: 14px; font-weight: 700;
+  }
+  .action-btn .key {
+    font-size: 10px; color: var(--text-dim);
+    font-weight: 600; letter-spacing: 0.05em;
+  }
+  .action-btn.danger { border-color: var(--danger); }
+  .action-btn.disabled-with-reason {
+    opacity: 0.55;
+  }
+
+  /* Secondary actions */
+  .secondary-actions {
+    display: flex; gap: 10px; flex-wrap: wrap;
+  }
+  .secondary-btn {
+    background: var(--bg-alt);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 8px 16px;
+    font-size: 13px; font-weight: 600;
+    color: var(--text-mute);
+    cursor: pointer; font-family: inherit;
+  }
+  .secondary-btn:hover {
+    background: white; color: var(--text);
+    border-color: var(--border-strong);
+  }
+
+  /* Stats panel */
+  .stats-panel {
+    background: white;
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-card);
+    padding: 22px;
+    height: fit-content;
+    position: sticky;
+    top: 80px;
+  }
+  .stats-title {
+    font-size: 11px; font-weight: 700;
+    color: var(--text-mute); letter-spacing: 0.06em;
+    text-transform: uppercase; margin: 0 0 16px;
+  }
+  .stat-row {
+    margin-bottom: 18px;
+  }
+  .stat-row:last-child { margin-bottom: 0; }
+  .stat-row .stat-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 6px;
+  }
+  .stat-row .stat-label {
+    font-size: 14px; font-weight: 700; color: var(--text);
+    display: flex; align-items: center; gap: 6px;
+  }
+  .stat-row .stat-value {
+    font-size: 13px; font-weight: 700; color: var(--text-mute);
+    font-variant-numeric: tabular-nums;
+  }
+  .stat-bar {
+    height: 10px;
+    background: var(--bg-alt);
+    border-radius: 999px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+  .stat-bar-fill {
+    height: 100%;
+    transition: width .4s, background .3s;
+    border-radius: 999px;
+  }
+  .stat-row[data-stat="hunger"] .stat-bar-fill { background: var(--hunger); }
+  .stat-row[data-stat="happy"] .stat-bar-fill { background: var(--happy); }
+  .stat-row[data-stat="clean"] .stat-bar-fill { background: var(--clean); }
+  .stat-row[data-stat="energy"] .stat-bar-fill { background: var(--energy); }
+  .stat-row[data-stat="love"] .stat-bar-fill { background: var(--love); }
+  .stat-row.low .stat-bar-fill { background: var(--danger) !important; animation: pulse 1.5s ease-in-out infinite; }
+  .stat-row.low .stat-value { color: var(--danger); }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+  }
+
+  /* Game info */
+  .info-card {
+    background: var(--bg-alt);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    margin-top: 18px;
+    font-size: 13px;
+    color: var(--text-mute);
+    line-height: 1.5;
+  }
+  .info-card strong { color: var(--text); font-weight: 700; }
+  .info-card .row {
+    display: flex; justify-content: space-between;
+    margin-bottom: 4px;
+  }
+
+  /* Activity log */
+  .log-section {
+    margin-top: 24px;
+    grid-column: 1 / -1;
+  }
+  .log-title {
+    font-size: 14px; font-weight: 700;
+    color: var(--text-mute); letter-spacing: 0.05em;
+    text-transform: uppercase; margin: 0 0 12px;
+  }
+  .log-list {
+    background: var(--bg-alt);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px;
+    max-height: 240px;
+    overflow-y: auto;
+    font-size: 13px;
+    color: var(--text-mute);
+  }
+  .log-list .log-entry {
+    padding: 4px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .log-list .log-entry:last-child { border-bottom: none; }
+  .log-list .log-time {
+    font-size: 11px; color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+    margin-right: 8px;
+  }
+
+  /* Minigame overlay */
+  .mg-overlay {
+    position: fixed; inset: 0; z-index: 130;
+    background: rgba(0,0,0,0.6);
+    display: flex; align-items: center; justify-content: center;
+    padding: 20px;
+    opacity: 0; visibility: hidden;
+    transition: opacity .25s, visibility .25s;
+  }
+  .mg-overlay.open { opacity: 1; visibility: visible; }
+  .mg-modal {
+    background: white;
+    border-radius: var(--radius-lg);
+    padding: 28px;
+    max-width: 480px; width: 100%;
+    box-shadow: var(--shadow-pop);
+  }
+  .mg-modal h2 {
+    margin: 0 0 6px; font-size: 22px; font-weight: 800;
+    color: var(--text);
+  }
+  .mg-modal .sub {
+    color: var(--text-mute); font-size: 14px; margin: 0 0 18px;
+  }
+  .mg-display {
+    background: var(--bg-alt);
+    border-radius: var(--radius);
+    padding: 24px; margin-bottom: 18px;
+    text-align: center;
+    font-size: 22px; font-weight: 700;
+    color: var(--text);
+    min-height: 80px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .mg-buttons {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
+    margin-bottom: 16px;
+  }
+  .mg-buttons button {
+    padding: 14px 8px;
+    background: var(--accent-soft);
+    border: 2px solid var(--accent);
+    border-radius: var(--radius);
+    font-size: 18px; font-weight: 800;
+    color: var(--accent-dark);
+    cursor: pointer; font-family: inherit;
+  }
+  .mg-buttons button:hover { background: var(--accent); color: white; }
+  .mg-buttons button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .mg-actions { display: flex; gap: 10px; justify-content: flex-end; }
+  .mg-actions button {
+    padding: 10px 18px; border-radius: 10px;
+    border: 1.5px solid var(--border-strong);
+    background: white; color: var(--text);
+    font-weight: 600; cursor: pointer; font-family: inherit;
+  }
+  .mg-actions button.primary {
+    background: var(--accent); color: white; border-color: var(--accent);
+  }
+
+  /* Settings modal */
+  .settings-overlay {
+    position: fixed; inset: 0; z-index: 140;
+    background: rgba(0,0,0,0.5);
+    display: none; align-items: center; justify-content: center;
+    padding: 20px;
+  }
+  .settings-overlay.open { display: flex; }
+  .settings-modal {
+    background: white; border-radius: var(--radius-lg);
+    padding: 28px; max-width: 520px; width: 100%;
+    max-height: 90vh; overflow-y: auto;
+    box-shadow: var(--shadow-pop);
+  }
+  .settings-modal h2 { margin: 0 0 18px; font-size: 22px; }
+  .settings-modal .field { margin-bottom: 16px; }
+  .settings-modal label {
+    display: block; font-size: 13px; font-weight: 600;
+    color: var(--text); margin-bottom: 6px;
+  }
+  .settings-modal input, .settings-modal select {
+    width: 100%; padding: 10px 12px;
+    border: 1.5px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    font-size: 14px; font-family: inherit;
+    background: white; color: var(--text);
+  }
+  .settings-modal .field-row { display: flex; gap: 10px; }
+  .settings-modal .field-row > * { flex: 1; }
+  .settings-modal .actions {
+    display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;
+  }
+  .settings-modal .actions button {
+    padding: 10px 20px; border-radius: 10px;
+    font-weight: 600; cursor: pointer; font-family: inherit;
+  }
+  .settings-modal .actions .save {
+    background: var(--accent); color: white; border: none;
+  }
+  .settings-modal .actions .cancel {
+    background: white; color: var(--text);
+    border: 1.5px solid var(--border-strong);
+  }
+  .settings-modal .small {
+    font-size: 12px; color: var(--text-dim); margin-top: 4px;
+  }
+
+  /* Toast / death overlay */
+  .toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: var(--text); color: white;
+    padding: 12px 20px; border-radius: 999px;
+    font-size: 14px; font-weight: 600;
+    z-index: 200;
+    box-shadow: var(--shadow-pop);
+    opacity: 0; pointer-events: none;
+    transition: opacity .3s, transform .3s;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .toast.show.warn { background: var(--warn); }
+  .toast.show.danger { background: var(--danger); }
+  .toast.show.care { background: var(--care); }
+
+  /* Connect popup */
+  .connect-overlay {
+    position: fixed; inset: 0; z-index: 145;
+    background: rgba(0,0,0,0.5);
+    display: none; align-items: center; justify-content: center;
+    padding: 20px;
+  }
+  .connect-overlay.open { display: flex; }
+  .connect-modal {
+    background: white; border-radius: var(--radius-lg);
+    padding: 32px; max-width: 480px; width: 100%;
+    box-shadow: var(--shadow-pop);
+  }
+  .connect-modal h2 { margin: 0 0 8px; font-size: 24px; }
+  .connect-modal .sub { color: var(--text-mute); margin: 0 0 24px; font-size: 14px; }
+  .connect-option {
+    display: flex; gap: 14px; padding: 16px;
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer;
+    margin-bottom: 10px;
+    background: white;
+    text-align: left; width: 100%;
+    font-family: inherit;
+    transition: border-color .15s, background .15s;
+  }
+  .connect-option:hover { border-color: var(--accent); background: var(--accent-soft); }
+  .connect-option .ic { font-size: 32px; }
+  .connect-option .info { flex: 1; }
+  .connect-option .info .name { font-size: 16px; font-weight: 700; color: var(--text); }
+  .connect-option .info .desc { font-size: 13px; color: var(--text-mute); margin-top: 2px; }
+  .connect-modal .close {
+    width: 100%; padding: 10px;
+    background: var(--bg-alt); color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius); cursor: pointer;
+    font-family: inherit; margin-top: 10px;
+  }
+
+  /* visually hidden for screen reader announcements */
+  .live-region {
+    position: absolute; left: -10000px;
+    width: 1px; height: 1px; overflow: hidden;
+  }
+
+  /* Stage transition flash */
+  .stage-flash {
+    position: fixed; inset: 0; z-index: 160;
+    background: var(--accent-soft);
+    display: none; align-items: center; justify-content: center;
+    opacity: 0; transition: opacity .4s;
+  }
+  .stage-flash.show { display: flex; opacity: 1; }
+  .stage-flash .content {
+    text-align: center;
+    animation: zoomIn .5s ease-out;
+  }
+  .stage-flash h2 { font-size: 36px; margin: 0 0 8px; color: var(--accent-dark); }
+  .stage-flash p { font-size: 16px; color: var(--text-mute); margin: 0; }
+  @keyframes zoomIn {
+    from { transform: scale(.7); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+  }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main-content">Skip to main content</a>
+
+<!-- Splash / onboarding -->
+<div class="splash" id="splash" role="dialog" aria-labelledby="splash-title" aria-modal="true">
+  <div class="hero" aria-hidden="true">🥚</div>
+  <h1 id="splash-title">DotPet</h1>
+  <p class="tagline" id="splash-tag">A tactile virtual pet you can raise with your Dot Pad — feed it, play with it, watch it grow.</p>
+  <div class="card">
+    <div id="continue-slot"></div>
+    <div class="card-title" id="card-title-fresh">Start a new pet</div>
+    <label for="pet-name-input" id="lbl-name">Your pet's name</label>
+    <input type="text" id="pet-name-input" maxlength="16" placeholder="e.g. Boto" autocomplete="off" />
+    <button class="start" id="splash-start" type="button" aria-label="Start the game">▶ Hatch the egg</button>
+    <div class="footer">
+      <span id="splash-foot">Need keys for Azure neural voice? Open <a href="#" id="open-settings-link">Settings</a> after hatching.</span>
+    </div>
+  </div>
+</div>
+
+<!-- Stage transition flash -->
+<div class="stage-flash" id="stage-flash" role="status" aria-live="polite">
+  <div class="content">
+    <h2 id="flash-title"></h2>
+    <p id="flash-sub"></p>
+  </div>
+</div>
+
+<!-- Header -->
+<header class="lab-header" role="banner">
+  <div class="lab-title">
+    <span class="pet-icon" aria-hidden="true">🐣</span>
+    <span>DotPet</span>
+  </div>
+  <span class="conn-status" id="conn-status" role="status" aria-live="polite">
+    <span class="conn-dot" id="conn-dot"></span>
+    <span id="conn-text">Disconnected</span>
+  </span>
+  <div class="lab-spacer"></div>
+  <button class="lab-btn" id="btn-connect" type="button" aria-label="Connect to Dot Pad">Connect Dot Pad</button>
+  <button class="lab-btn active" id="btn-tts" type="button" aria-label="Toggle voice" aria-pressed="true">Voice</button>
+  <button class="lab-btn active" id="btn-sfx" type="button" aria-label="Toggle sound effects" aria-pressed="true">SFX</button>
+  <button class="lab-btn" id="btn-lang" type="button" aria-label="Toggle language">EN</button>
+  <button class="lab-btn" id="btn-settings" type="button" aria-label="Open settings">⚙</button>
+</header>
+
+<!-- Main game -->
+<main id="main-content">
+  <section class="pet-card" aria-labelledby="pet-name-display">
+    <div class="pet-header">
+      <div>
+        <div class="pet-name-display" id="pet-name-display">Boto</div>
+        <span class="pet-stage-chip" id="pet-stage-chip">EGG</span>
+      </div>
+      <div class="pet-mood-icon" id="pet-mood-icon" aria-hidden="true">🥚</div>
+    </div>
+    <div class="pet-stage-vis" id="pet-stage-vis" role="img" aria-label="Pet visualization">
+      <!-- SVG injected by JS -->
+    </div>
+    <div class="pet-speech" role="region" aria-labelledby="speech-label" aria-live="polite">
+      <div class="label" id="speech-label">Pet says</div>
+      <div class="text" id="speech-text">…</div>
+      <button class="replay-btn" id="btn-replay" type="button" aria-label="Replay narration">Replay</button>
+    </div>
+    <div class="actions-grid" role="group" aria-label="Care actions">
+      <button class="action-btn" id="act-feed" type="button" aria-describedby="key-feed">
+        <span class="ic" aria-hidden="true">🍎</span>
+        <span class="lbl" id="lbl-feed">Feed</span>
+        <span class="key" id="key-feed">F1</span>
+      </button>
+      <button class="action-btn" id="act-play" type="button" aria-describedby="key-play">
+        <span class="ic" aria-hidden="true">🎲</span>
+        <span class="lbl" id="lbl-play">Play</span>
+        <span class="key" id="key-play">F2</span>
+      </button>
+      <button class="action-btn" id="act-clean" type="button" aria-describedby="key-clean">
+        <span class="ic" aria-hidden="true">🛁</span>
+        <span class="lbl" id="lbl-clean">Clean</span>
+        <span class="key" id="key-clean">F3</span>
+      </button>
+      <button class="action-btn" id="act-sleep" type="button" aria-describedby="key-sleep">
+        <span class="ic" aria-hidden="true">💤</span>
+        <span class="lbl" id="lbl-sleep">Sleep</span>
+        <span class="key" id="key-sleep">F4</span>
+      </button>
+    </div>
+    <div class="secondary-actions">
+      <button class="secondary-btn" id="act-stats" type="button" aria-label="Announce all stats">📊 <span id="lbl-stats">Check stats (F1+F2)</span></button>
+      <button class="secondary-btn" id="act-info" type="button" aria-label="Announce pet info">📜 <span id="lbl-info">Info (F3+F4)</span></button>
+      <button class="secondary-btn" id="act-help" type="button" aria-label="Announce key help">❓ <span id="lbl-help">Help</span></button>
+    </div>
+  </section>
+
+  <aside class="stats-panel" aria-label="Pet stats">
+    <p class="stats-title" id="stats-panel-title">Care Stats</p>
+    <div class="stat-row" data-stat="hunger">
+      <div class="stat-head">
+        <span class="stat-label">🍽 <span id="lbl-stat-hunger">Hunger</span></span>
+        <span class="stat-value" id="val-hunger">—</span>
+      </div>
+      <div class="stat-bar"><div class="stat-bar-fill" style="width: 0%"></div></div>
+    </div>
+    <div class="stat-row" data-stat="happy">
+      <div class="stat-head">
+        <span class="stat-label">😊 <span id="lbl-stat-happy">Happiness</span></span>
+        <span class="stat-value" id="val-happy">—</span>
+      </div>
+      <div class="stat-bar"><div class="stat-bar-fill" style="width: 0%"></div></div>
+    </div>
+    <div class="stat-row" data-stat="clean">
+      <div class="stat-head">
+        <span class="stat-label">🫧 <span id="lbl-stat-clean">Clean</span></span>
+        <span class="stat-value" id="val-clean">—</span>
+      </div>
+      <div class="stat-bar"><div class="stat-bar-fill" style="width: 0%"></div></div>
+    </div>
+    <div class="stat-row" data-stat="energy">
+      <div class="stat-head">
+        <span class="stat-label">⚡ <span id="lbl-stat-energy">Energy</span></span>
+        <span class="stat-value" id="val-energy">—</span>
+      </div>
+      <div class="stat-bar"><div class="stat-bar-fill" style="width: 0%"></div></div>
+    </div>
+    <div class="stat-row" data-stat="love">
+      <div class="stat-head">
+        <span class="stat-label">💗 <span id="lbl-stat-love">Bond</span></span>
+        <span class="stat-value" id="val-love">—</span>
+      </div>
+      <div class="stat-bar"><div class="stat-bar-fill" style="width: 0%"></div></div>
+    </div>
+
+    <div class="info-card" aria-label="Pet info">
+      <div class="row"><span id="lbl-age">Age</span><strong id="val-age">—</strong></div>
+      <div class="row"><span id="lbl-stage">Stage</span><strong id="val-stage">Egg</strong></div>
+      <div class="row"><span id="lbl-time">Game speed</span><strong id="val-time">Demo</strong></div>
+    </div>
+  </aside>
+
+  <section class="log-section" aria-label="Activity log">
+    <p class="log-title" id="log-title">Activity Log</p>
+    <div class="log-list" id="log-list" role="log" aria-live="off"></div>
+  </section>
+</main>
+
+<!-- Minigame overlay -->
+<div class="mg-overlay" id="mg-overlay" role="dialog" aria-modal="true" aria-labelledby="mg-title">
+  <div class="mg-modal">
+    <h2 id="mg-title">Mini-game</h2>
+    <p class="sub" id="mg-sub">Tap the right number</p>
+    <div class="mg-display" id="mg-display">—</div>
+    <div class="mg-buttons" id="mg-buttons">
+      <button type="button" data-mg="1">1</button>
+      <button type="button" data-mg="2">2</button>
+      <button type="button" data-mg="3">3</button>
+      <button type="button" data-mg="4">4</button>
+    </div>
+    <div class="mg-actions">
+      <button id="mg-close" type="button">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Connect overlay -->
+<div class="connect-overlay" id="connect-overlay" role="dialog" aria-modal="true" aria-labelledby="connect-title">
+  <div class="connect-modal">
+    <h2 id="connect-title">Connect Dot Pad</h2>
+    <p class="sub" id="connect-sub">Choose how to connect to your Dot Pad device.</p>
+    <button class="connect-option" id="connect-ble" type="button">
+      <span class="ic" aria-hidden="true">📡</span>
+      <span class="info">
+        <span class="name">Bluetooth</span>
+        <span class="desc" id="connect-ble-desc">Wireless connection (recommended)</span>
+      </span>
+    </button>
+    <button class="connect-option" id="connect-usb" type="button">
+      <span class="ic" aria-hidden="true">🔌</span>
+      <span class="info">
+        <span class="name">USB</span>
+        <span class="desc" id="connect-usb-desc">Wired connection via cable</span>
+      </span>
+    </button>
+    <button class="close" id="connect-close" type="button">Cancel</button>
+  </div>
+</div>
+
+<!-- Settings overlay -->
+<div class="settings-overlay" id="settings-overlay" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+  <div class="settings-modal">
+    <h2 id="settings-title">Settings</h2>
+    <div class="field">
+      <label for="setup-lang">Language</label>
+      <select id="setup-lang">
+        <option value="en">English</option>
+        <option value="ko">한국어</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="setup-speed" id="lbl-speed">Game speed</label>
+      <select id="setup-speed">
+        <option value="demo">Demo (1 hr = 1 day, 6 hr to adult)</option>
+        <option value="normal">Normal (1 day = 1 day, 6 days to adult)</option>
+        <option value="slow">Slow (3 days = 1 stage)</option>
+      </select>
+      <div class="small" id="speed-hint">Demo speed lets you see all evolution stages in one sitting.</div>
+    </div>
+    <div class="field">
+      <label for="az-key">Azure Speech key (optional)</label>
+      <input type="password" id="az-key" placeholder="32-character key" autocomplete="off" />
+      <div class="small">Without a key, your system voice is used (still works fully).</div>
+    </div>
+    <div class="field field-row">
+      <div>
+        <label for="az-region">Region</label>
+        <select id="az-region">
+          <option value="koreacentral">Korea Central</option>
+          <option value="eastus">East US</option>
+          <option value="westeurope">West Europe</option>
+          <option value="japaneast">Japan East</option>
+        </select>
+      </div>
+      <div>
+        <label for="az-voice">Voice</label>
+        <select id="az-voice">
+          <option value="en-US-AriaNeural">en-US Aria (warm)</option>
+          <option value="en-US-JennyNeural">en-US Jenny (friendly)</option>
+          <option value="en-US-GuyNeural">en-US Guy (gentle)</option>
+          <option value="ko-KR-SunHiNeural">ko-KR SunHi (warm)</option>
+          <option value="ko-KR-InJoonNeural">ko-KR InJoon (gentle)</option>
+        </select>
+      </div>
+    </div>
+    <div class="field">
+      <button id="reset-pet" type="button" style="background: var(--danger-soft); color: var(--danger); border: 1.5px solid var(--danger); padding: 10px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; font-family: inherit; width: 100%;">Reset pet (start fresh)</button>
+      <div class="small" style="color: var(--danger);">⚠ This deletes your current pet permanently.</div>
+    </div>
+    <div class="actions">
+      <button class="cancel" id="settings-cancel" type="button">Cancel</button>
+      <button class="save" id="settings-save" type="button">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast" role="alert" aria-live="assertive"></div>
+
+<!-- Screen reader live region for action announcements -->
+<div class="live-region" id="live-region" aria-live="polite" aria-atomic="true"></div>
+
+<!-- Dot Pad SDK loader (named import + instance) -->
+<script type="module">
+  try {
+    const { DotPadSDK, DotPadScanner, DisplayMode, DataCodes, KeyCodes }
+      = await import('./dotpad-sdk/DotPadSDK-3.0.0.js');
+    window.DotPad = {
+      sdk: new DotPadSDK(),
+      scanner: new DotPadScanner(),
+      DisplayMode, DataCodes, KeyCodes,
+    };
+    console.log('[DotPet] Dot Pad SDK loaded');
+  } catch (err) {
+    window._dotpadLoadError = err.message || String(err);
+    console.warn('[DotPet] SDK load failed:', err);
+  }
+</script>
+
+<script>
+/* ============================================================
+   DotPet — Main game logic
+   ============================================================ */
+'use strict';
+
+// ============================================================
+// i18n
+// ============================================================
+const I18N = {
+  en: {
+    pageTitle: 'DotPet — Virtual Pet for Dot Pad',
+    splashTitle: 'DotPet',
+    splashTag: 'A tactile virtual pet you can raise with your Dot Pad — feed it, play with it, watch it grow.',
+    cardTitleFresh: 'Start a new pet',
+    cardTitleContinue: 'Continue your pet',
+    lblName: "Your pet's name",
+    placeholderName: 'e.g. Boto',
+    btnStart: '▶ Hatch the egg',
+    btnContinue: '▶ Continue',
+    btnNewPet: 'Start fresh',
+    footHint: 'Need keys for Azure neural voice? Open Settings after hatching.',
+    headerConnect: 'Connect Dot Pad',
+    voiceBtn: 'Voice',
+    sfxBtn: 'SFX',
+    settings: 'Settings',
+    disconnected: 'Disconnected',
+    connecting: 'Connecting…',
+    connected: 'Connected',
+    actFeed: 'Feed',
+    actPlay: 'Play',
+    actClean: 'Clean',
+    actSleep: 'Sleep',
+    actWake: 'Wake',
+    actStats: 'Check stats',
+    actInfo: 'Info',
+    actHelp: 'Help',
+    statHunger: 'Hunger',
+    statHappy: 'Happiness',
+    statClean: 'Clean',
+    statEnergy: 'Energy',
+    statLove: 'Bond',
+    lblAge: 'Age',
+    lblStage: 'Stage',
+    lblTime: 'Game speed',
+    lblSpeed: 'Game speed',
+    speedDemo: 'Demo (1 hr = 1 day, 6 hr to adult)',
+    speedNormal: 'Normal (1 day = 1 day, 6 days to adult)',
+    speedSlow: 'Slow (3 days = 1 stage)',
+    speedHint: 'Demo speed lets you see all evolution stages in one sitting.',
+    careStats: 'Care Stats',
+    log: 'Activity Log',
+    stageEgg: 'Egg',
+    stageBaby: 'Baby',
+    stageChild: 'Child',
+    stageAdultHappy: 'Happy adult',
+    stageAdultNormal: 'Normal adult',
+    stageAdultSad: 'Sad adult',
+    statsTitle: 'Care Stats',
+    chipEGG: 'EGG',
+    chipBABY: 'BABY',
+    chipCHILD: 'CHILD',
+    chipADULT: 'ADULT',
+    // Pet speech
+    petWakeEgg: 'You hear a faint heartbeat from inside the egg.',
+    petWakeBaby: name => `${name} blinks at you and gurgles.`,
+    petWakeChild: name => `${name} bounces up — "Let's play today!"`,
+    petWakeAdult: name => `${name} greets you warmly.`,
+    speechFedFull: name => `${name} pats their belly. So full!`,
+    speechFedGood: name => `${name} happily eats.`,
+    speechFedOk: name => `${name} nibbles politely.`,
+    speechFedNo: name => `${name} pushes the food away. Not hungry.`,
+    speechPlay: name => `${name} bounces excitedly!`,
+    speechPlayTired: name => `${name} is too tired to play. Maybe a nap first?`,
+    speechCleanOk: name => `${name} feels squeaky clean now.`,
+    speechCleanResist: name => `${name} squirms in the bath, but is much cleaner!`,
+    speechSleepStart: name => `${name} curls up and starts to snooze…`,
+    speechWakeUp: name => `${name} stretches and wakes up, refreshed.`,
+    speechAlreadySleep: name => `${name} is already sleeping. Try waking them up.`,
+    needHungry: name => `${name} is really hungry. They need food.`,
+    needSad: name => `${name} looks bored. Play with them?`,
+    needDirty: name => `${name} smells a little. Bath time?`,
+    needSleepy: name => `${name} is yawning. They need sleep.`,
+    needSick: name => `${name} doesn't feel well. Take better care.`,
+    eggHatchSoon: 'The egg is starting to wobble…',
+    eggHatch: name => `The egg cracks open — ${name} is born!`,
+    evolveBaby: name => `${name} is no longer an egg — they're a baby now!`,
+    evolveChild: name => `${name} has grown up — they're a curious child now!`,
+    evolveAdultHappy: name => `${name} has become a happy adult. You raised them with so much love.`,
+    evolveAdultNormal: name => `${name} has become an adult. They're getting along just fine.`,
+    evolveAdultSad: name => `${name} has become an adult, but seems wistful. They needed more care.`,
+    statsReport: (h, hp, c, e, l) => `Hunger ${h}, Happiness ${hp}, Clean ${c}, Energy ${e}, Bond ${l}.`,
+    infoReport: (name, stage, age, days) => `${name}, stage ${stage}, age ${age}, alive ${days} days.`,
+    keyHelp: 'Press F1 to feed, F2 to play, F3 to clean, F4 to sleep. F1 plus F2 for stats. F3 plus F4 for info. Number keys 1 to 4 also work.',
+    mgGuessTitle: 'Number Guessing',
+    mgGuessSub: name => `${name} is thinking of a number 1 to 4. Guess it!`,
+    mgGuessHigher: 'Higher!',
+    mgGuessLower: 'Lower!',
+    mgGuessCorrect: name => `Yes! ${name} loves this game!`,
+    mgGuessWrong: name => `Aw, ${name} giggles — wrong guess.`,
+    mgRhythmTitle: 'Echo Rhythm',
+    mgRhythmSub: name => `Listen to ${name}'s pattern, then repeat it with the buttons.`,
+    mgRhythmListen: 'Listen…',
+    mgRhythmYourTurn: 'Your turn! Tap the same sequence.',
+    mgRhythmWin: name => `${name} is delighted!`,
+    mgRhythmLose: name => `Almost! ${name} forgives you.`,
+    mgClose: 'Close',
+    mgPlayAgain: 'Play again',
+    toastSaved: 'Saved',
+    toastWelcome: name => `Welcome back, ${name}!`,
+    toastFirstHatch: 'A new pet has been born!',
+    toastConnected: 'Dot Pad connected',
+    toastDisconnected: 'Dot Pad disconnected',
+    toastResetConfirm: 'Reset pet — type RESET in confirmation prompt',
+    toastReset: 'Pet reset. Start a new one.',
+    ageHours: h => `${h} hours`,
+    ageMinutes: m => `${m} minutes`,
+    ageDays: d => `${d} days`,
+    notReadyEgg: name => `Cannot do that yet — ${name || 'the egg'} hasn't hatched.`,
+    notReadyBaby: name => `${name} is too small for this yet.`,
+    logFeed: 'Fed',
+    logPlay: 'Played',
+    logClean: 'Cleaned',
+    logSleep: 'Put to sleep',
+    logWake: 'Woke up',
+    logEvolve: 'Evolved',
+    logHatch: 'Hatched',
+  },
+  ko: {
+    pageTitle: '닷펫 — 닷패드 가상 펫',
+    splashTitle: '닷펫 (DotPet)',
+    splashTag: '닷패드와 함께 키우는 촉각 가상 펫 — 먹이 주고, 놀아주고, 성장 과정을 함께해요.',
+    cardTitleFresh: '새 펫 시작하기',
+    cardTitleContinue: '이어서 돌보기',
+    lblName: '펫의 이름',
+    placeholderName: '예: 보토',
+    btnStart: '▶ 알 부화시키기',
+    btnContinue: '▶ 이어 하기',
+    btnNewPet: '새 펫 시작',
+    footHint: 'Azure 신경망 음성 키는 부화 후 설정에서 입력하면 돼요.',
+    headerConnect: '닷패드 연결',
+    voiceBtn: '음성',
+    sfxBtn: '효과음',
+    settings: '설정',
+    disconnected: '연결 안 됨',
+    connecting: '연결 중…',
+    connected: '연결됨',
+    actFeed: '먹이',
+    actPlay: '놀기',
+    actClean: '씻기',
+    actSleep: '재우기',
+    actWake: '깨우기',
+    actStats: '상태 확인',
+    actInfo: '정보',
+    actHelp: '도움말',
+    statHunger: '배고픔',
+    statHappy: '행복',
+    statClean: '청결',
+    statEnergy: '에너지',
+    statLove: '애정',
+    lblAge: '나이',
+    lblStage: '단계',
+    lblTime: '시간 속도',
+    lblSpeed: '시간 속도',
+    speedDemo: '데모 (1시간 = 1일, 6시간이면 어른)',
+    speedNormal: '보통 (1일 = 1일, 6일이면 어른)',
+    speedSlow: '느림 (3일 = 1단계)',
+    speedHint: '데모 모드에서는 한 자리에서 모든 진화 단계를 볼 수 있어요.',
+    careStats: '돌봄 상태',
+    log: '활동 기록',
+    stageEgg: '알',
+    stageBaby: '아기',
+    stageChild: '어린이',
+    stageAdultHappy: '행복한 어른',
+    stageAdultNormal: '평범한 어른',
+    stageAdultSad: '쓸쓸한 어른',
+    statsTitle: '돌봄 상태',
+    chipEGG: '알',
+    chipBABY: '아기',
+    chipCHILD: '어린이',
+    chipADULT: '어른',
+    petWakeEgg: '알 안에서 작은 심장 소리가 들려요.',
+    petWakeBaby: name => `${name}가 눈을 깜빡이며 옹알이를 해요.`,
+    petWakeChild: name => `${name}가 폴짝거려요 — "오늘도 같이 놀자!"`,
+    petWakeAdult: name => `${name}가 따뜻하게 인사해요.`,
+    speechFedFull: name => `${name}가 배를 두드려요. 배불러요!`,
+    speechFedGood: name => `${name}가 맛있게 먹어요.`,
+    speechFedOk: name => `${name}가 조금 먹어요.`,
+    speechFedNo: name => `${name}가 음식을 밀어내요. 배 안 고파요.`,
+    speechPlay: name => `${name}가 신나게 뛰어다녀요!`,
+    speechPlayTired: name => `${name}가 너무 피곤해서 못 놀아요. 잠 좀 재울까요?`,
+    speechCleanOk: name => `${name}가 뽀송뽀송해졌어요.`,
+    speechCleanResist: name => `${name}가 목욕 중에 꿈틀거리지만 깨끗해졌어요!`,
+    speechSleepStart: name => `${name}가 웅크리며 잠들어요…`,
+    speechWakeUp: name => `${name}가 기지개 켜며 일어났어요.`,
+    speechAlreadySleep: name => `${name}는 이미 자고 있어요. 깨우려면 다시 눌러요.`,
+    needHungry: name => `${name}가 정말 배고파요. 먹이가 필요해요.`,
+    needSad: name => `${name}가 심심해 보여요. 같이 놀아줄까요?`,
+    needDirty: name => `${name}한테서 냄새가 살짝 나요. 목욕할 시간?`,
+    needSleepy: name => `${name}가 하품을 해요. 잠이 필요해요.`,
+    needSick: name => `${name}가 아파 보여요. 더 잘 돌봐주세요.`,
+    eggHatchSoon: '알이 흔들리기 시작해요…',
+    eggHatch: name => `알이 톡 깨졌어요 — ${name}가 태어났어요!`,
+    evolveBaby: name => `${name}가 아기 단계로 자랐어요!`,
+    evolveChild: name => `${name}가 어린이로 성장했어요. 호기심 많은 아이!`,
+    evolveAdultHappy: name => `${name}가 행복한 어른이 되었어요. 정성껏 키워주셨네요.`,
+    evolveAdultNormal: name => `${name}가 어른이 되었어요. 잘 지내고 있어요.`,
+    evolveAdultSad: name => `${name}가 어른이 되었지만 쓸쓸해 보여요. 더 사랑이 필요했어요.`,
+    statsReport: (h, hp, c, e, l) => `배고픔 ${h}, 행복 ${hp}, 청결 ${c}, 에너지 ${e}, 애정 ${l}.`,
+    infoReport: (name, stage, age, days) => `${name}, 단계 ${stage}, 나이 ${age}, ${days}일 살았어요.`,
+    keyHelp: 'F1 먹이주기, F2 놀기, F3 씻기, F4 재우기. F1 더하기 F2 상태 확인. F3 더하기 F4 정보. 숫자 키 1부터 4도 사용 가능.',
+    mgGuessTitle: '숫자 맞추기',
+    mgGuessSub: name => `${name}가 1에서 4 사이 숫자를 생각하고 있어요. 맞춰봐요!`,
+    mgGuessHigher: '더 높게!',
+    mgGuessLower: '더 낮게!',
+    mgGuessCorrect: name => `정답! ${name}가 좋아해요!`,
+    mgGuessWrong: name => `아쉽다 — ${name}가 깔깔 웃어요. 다시!`,
+    mgRhythmTitle: '리듬 따라하기',
+    mgRhythmSub: name => `${name}가 들려주는 패턴을 듣고 버튼으로 따라해봐요.`,
+    mgRhythmListen: '잘 들어요…',
+    mgRhythmYourTurn: '이번엔 차례! 똑같이 눌러봐요.',
+    mgRhythmWin: name => `${name}가 기뻐해요!`,
+    mgRhythmLose: name => `거의 다 됐어요! ${name}가 괜찮대요.`,
+    mgClose: '닫기',
+    mgPlayAgain: '한번 더',
+    toastSaved: '저장됨',
+    toastWelcome: name => `${name}, 다시 만나서 반가워요!`,
+    toastFirstHatch: '새 펫이 태어났어요!',
+    toastConnected: '닷패드 연결됨',
+    toastDisconnected: '닷패드 연결 끊김',
+    toastResetConfirm: '펫 리셋 — 확인창에 RESET 입력하세요',
+    toastReset: '펫이 리셋됐어요. 새로 시작하세요.',
+    ageHours: h => `${h}시간`,
+    ageMinutes: m => `${m}분`,
+    ageDays: d => `${d}일`,
+    notReadyEgg: name => `아직 못 해요 — ${name || '알'}이 아직 부화하지 않았어요.`,
+    notReadyBaby: name => `${name}는 아직 너무 작아요.`,
+    logFeed: '먹였음',
+    logPlay: '놀았음',
+    logClean: '씻었음',
+    logSleep: '재웠음',
+    logWake: '깨움',
+    logEvolve: '진화',
+    logHatch: '부화',
+  }
+};
+function T() { return I18N[state.lang]; }
+
+// ============================================================
+// Game speed (game-time multiplier — how much faster game time moves vs real)
+// demo: 1 real hour = 24 game hours → 6 real hours = 6 game days
+// normal: 1 real day = 1 game day
+// slow: 3 real days = 1 game stage
+// ============================================================
+const SPEED = {
+  demo:   { mult: 24, evolveHoursFromHatch: { baby: 1, child: 3, adult: 6 } },  // game-hours from hatch
+  normal: { mult: 1,  evolveHoursFromHatch: { baby: 24, child: 72, adult: 144 } },
+  slow:   { mult: 0.33, evolveHoursFromHatch: { baby: 24*3, child: 24*9, adult: 24*18 } },
+};
+
+// ============================================================
+// State (with localStorage persistence)
+// ============================================================
+const SAVE_KEY = 'dotpet:save:v1';
+const SETTINGS_KEY = 'dotpet:settings:v1';
+
+const defaultPet = () => ({
+  name: 'Boto',
+  bornAt: Date.now(),
+  lastUpdate: Date.now(),
+  stage: 'egg',        // egg | baby | child | adult
+  adultType: null,     // 'happy' | 'normal' | 'sad' (set on adult evolve)
+  stats: {
+    hunger: 60,    // higher = more full; decays down
+    happy: 60,
+    clean: 80,
+    energy: 80,
+    love: 50,
+  },
+  loveTotal: 0,        // sum of love increments — for adult branching
+  asleep: false,
+  sickSince: null,
+  totalActions: 0,
+});
+
+const state = {
+  lang: 'en',
+  speed: 'demo',
+  pet: null,
+  sfxOn: true,
+  ttsOn: true,
+  dotpadConnected: false,
+  dotpadDevice: null,
+  azureKey: null,
+  azureRegion: 'koreacentral',
+  azureVoice: 'en-US-AriaNeural',
+  ttsPlaying: false,
+  log: [],
+  lastSpeech: '',
+  mg: null,            // active minigame state
+};
+
+function loadSettings() {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (!raw) return;
+    const s = JSON.parse(raw);
+    if (s.lang) state.lang = s.lang;
+    if (s.speed) state.speed = s.speed;
+    if (typeof s.sfxOn === 'boolean') state.sfxOn = s.sfxOn;
+    if (typeof s.ttsOn === 'boolean') state.ttsOn = s.ttsOn;
+    if (s.azureKey) state.azureKey = s.azureKey;
+    if (s.azureRegion) state.azureRegion = s.azureRegion;
+    if (s.azureVoice) state.azureVoice = s.azureVoice;
+  } catch(e) { console.warn('[settings] load failed:', e); }
+}
+function saveSettings() {
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+      lang: state.lang,
+      speed: state.speed,
+      sfxOn: state.sfxOn,
+      ttsOn: state.ttsOn,
+      azureKey: state.azureKey,
+      azureRegion: state.azureRegion,
+      azureVoice: state.azureVoice,
+    }));
+  } catch(e) { console.warn('[settings] save failed:', e); }
+}
+
+function loadPet() {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch(e) { return null; }
+}
+function savePet() {
+  if (!state.pet) return;
+  state.pet.lastUpdate = Date.now();
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(state.pet)); } catch(e) {}
+}
+function resetPet() {
+  try { localStorage.removeItem(SAVE_KEY); } catch(e) {}
+  state.pet = null;
+}
+
+// ============================================================
+// Speech / TTS — Azure with Web Speech fallback (English voice quality fix)
+// ============================================================
+let currentAudio = null;
+let preferredVoiceKo = null;
+let preferredVoiceEn = null;
+function loadVoices() {
+  if (!window.speechSynthesis) return;
+  const voices = speechSynthesis.getVoices();
+  preferredVoiceKo =
+    voices.find(v => /yuna|seoyeon/i.test(v.name) && v.lang.startsWith('ko')) ||
+    voices.find(v => v.lang.startsWith('ko-KR') && /female|f$/i.test(v.name)) ||
+    voices.find(v => v.lang.startsWith('ko-KR')) ||
+    voices.find(v => v.lang.startsWith('ko'));
+  const englishVoices = voices.filter(v => v.lang.startsWith('en'));
+  const isLowQuality = (name) => /albert|bahh|bells|boing|bubbles|cellos|deranged|good news|hysterical|junior|pipe organ|trinoids|whisper|zarvox|bad news|kathy/i.test(name);
+  preferredVoiceEn =
+    englishVoices.find(v => /Google US English/i.test(v.name)) ||
+    englishVoices.find(v => /^(Samantha|Ava|Alex|Karen|Allison|Susan|Tessa)$/i.test(v.name) && v.lang === 'en-US') ||
+    englishVoices.find(v => /^(Samantha|Ava|Alex|Karen|Allison|Susan|Tessa)/i.test(v.name)) ||
+    englishVoices.find(v => /Aria|Jenny|Guy|Davis|Sara|Emma/i.test(v.name) && /Neural|Online/i.test(v.name)) ||
+    englishVoices.find(v => v.lang === 'en-US' && v.default && !isLowQuality(v.name)) ||
+    englishVoices.find(v => v.lang === 'en-US' && !isLowQuality(v.name)) ||
+    englishVoices.find(v => !isLowQuality(v.name)) ||
+    englishVoices[0];
+}
+if (window.speechSynthesis) {
+  speechSynthesis.onvoiceschanged = loadVoices;
+  loadVoices();
+}
+
+let _lastSpokenText = '';
+let _lastSpokenAt = 0;
+async function speak(text, opts = {}) {
+  if (!state.ttsOn) return;
+  const cleaned = (text || '').replace(/\[(.*?)\]/g, '').trim();
+  if (!cleaned) return;
+  const now = Date.now();
+  if (cleaned === _lastSpokenText && (now - _lastSpokenAt) < 1500 && state.ttsPlaying) return;
+  _lastSpokenText = cleaned;
+  _lastSpokenAt = now;
+  stopSpeaking();
+  state.ttsPlaying = true;
+  state.lastSpeech = cleaned;
+
+  // Azure
+  if (state.azureKey) {
+    try {
+      const voice = opts.voice || state.azureVoice;
+      let xmlLang = 'en-US';
+      if (voice.startsWith('ko-')) xmlLang = 'ko-KR';
+      const ssml = `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="${xmlLang}">
+        <voice name="${voice}"><prosody rate="-3%">${cleaned}</prosody></voice>
+      </speak>`;
+      const res = await fetch(`https://${state.azureRegion}.tts.speech.microsoft.com/cognitiveservices/v1`, {
+        method: 'POST',
+        headers: {
+          'Ocp-Apim-Subscription-Key': state.azureKey,
+          'Content-Type': 'application/ssml+xml',
+          'X-Microsoft-OutputFormat': 'audio-24khz-48kbitrate-mono-mp3',
+          'User-Agent': 'dotpet',
+        },
+        body: ssml,
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      currentAudio = audio;
+      audio.onended = () => { state.ttsPlaying = false; URL.revokeObjectURL(url); };
+      audio.onerror = () => { state.ttsPlaying = false; };
+      await audio.play();
+      return;
+    } catch(e) { console.warn('[speak] Azure failed:', e); }
+  }
+  // Web Speech
+  if (!window.speechSynthesis) { state.ttsPlaying = false; return; }
+  try { if (speechSynthesis.paused) speechSynthesis.resume(); } catch(e){}
+  const utter = new SpeechSynthesisUtterance(cleaned);
+  const voicePrefix = (state.azureVoice || '').split('-')[0];
+  const isKo = state.lang === 'ko' || voicePrefix === 'ko';
+  utter.lang = isKo ? 'ko-KR' : 'en-US';
+  if (isKo) { utter.rate = 0.95; utter.pitch = opts.npc ? 0.95 : 1.05; }
+  else { utter.rate = 1.0; utter.pitch = opts.npc ? 0.95 : 1.0; }
+  if (isKo && preferredVoiceKo) utter.voice = preferredVoiceKo;
+  else if (!isKo && preferredVoiceEn) utter.voice = preferredVoiceEn;
+  utter.onend = () => { state.ttsPlaying = false; };
+  utter.onerror = () => { state.ttsPlaying = false; };
+  setTimeout(() => {
+    try { speechSynthesis.speak(utter); } catch(e) { state.ttsPlaying = false; }
+  }, 0);
+}
+function stopSpeaking() {
+  if (currentAudio) { try { currentAudio.pause(); } catch(e){} currentAudio = null; }
+  if (window.speechSynthesis) { try { speechSynthesis.cancel(); } catch(e){} }
+  state.ttsPlaying = false;
+}
+
+// ============================================================
+// SFX — Web Audio
+// ============================================================
+let _audioCtx = null;
+function audioCtx() {
+  if (!_audioCtx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    _audioCtx = new AC();
+  }
+  if (_audioCtx.state === 'suspended') _audioCtx.resume();
+  return _audioCtx;
+}
+function _tone(freq, dur = 0.08, type = 'sine', vol = 0.1) {
+  if (!state.sfxOn) return;
+  try {
+    const ctx = audioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type; osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0, ctx.currentTime);
+    gain.gain.linearRampToValueAtTime(vol, ctx.currentTime + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + dur + 0.05);
+  } catch(e) {}
+}
+function _seq(notes, vol = 0.1) {
+  if (!state.sfxOn) return;
+  let t = 0;
+  notes.forEach(([f, d]) => {
+    setTimeout(() => _tone(f, d, 'sine', vol), t * 1000);
+    t += d * 0.9;
+  });
+}
+function _noise(dur = 0.2, vol = 0.1) {
+  if (!state.sfxOn) return;
+  try {
+    const ctx = audioCtx();
+    const buf = ctx.createBuffer(1, ctx.sampleRate * dur, ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * Math.exp(-i / data.length * 4);
+    const src = ctx.createBufferSource();
+    const gain = ctx.createGain();
+    gain.gain.value = vol;
+    src.buffer = buf;
+    src.connect(gain).connect(ctx.destination);
+    src.start();
+  } catch(e) {}
+}
+const SFX = {
+  hatch:   () => _seq([[330, 0.1], [440, 0.12], [660, 0.15], [880, 0.25]]),
+  feed:    () => _seq([[523, 0.08], [659, 0.1], [784, 0.12]]),
+  eatFull: () => _seq([[440, 0.12], [523, 0.1], [440, 0.18]]),
+  play:    () => _seq([[660, 0.08], [880, 0.08], [1047, 0.1], [880, 0.08], [660, 0.12]]),
+  clean:   () => { _noise(0.18, 0.08); _tone(880, 0.08, 'sine', 0.06); setTimeout(() => _tone(1320, 0.1, 'sine', 0.07), 100); },
+  sleep:   () => _seq([[440, 0.2], [349, 0.25], [262, 0.35]]),
+  wake:    () => _seq([[262, 0.1], [349, 0.1], [440, 0.15]]),
+  happy:   () => _seq([[659, 0.1], [784, 0.1], [988, 0.12], [1319, 0.2]]),
+  sad:     () => _seq([[440, 0.18], [349, 0.22], [262, 0.4]]),
+  evolve:  () => _seq([[392, 0.15], [523, 0.15], [659, 0.15], [784, 0.18], [1047, 0.3]]),
+  bad:     () => _seq([[220, 0.15], [196, 0.25]]),
+  stat:    () => _tone(880, 0.06, 'triangle', 0.07),
+  click:   () => _tone(660, 0.04, 'sine', 0.05),
+};
+
+// ============================================================
+// Pet stage logic — time calculation
+// ============================================================
+function getGameHoursAlive() {
+  if (!state.pet) return 0;
+  const real = Date.now() - state.pet.bornAt;
+  const mult = SPEED[state.speed].mult;
+  return (real / 1000 / 3600) * mult;
+}
+function computeStage() {
+  if (!state.pet) return 'egg';
+  const h = getGameHoursAlive();
+  const evolve = SPEED[state.speed].evolveHoursFromHatch;
+  if (h < evolve.baby) return 'egg';
+  if (h < evolve.child) return 'baby';
+  if (h < evolve.adult) return 'child';
+  return 'adult';
+}
+function computeAdultType() {
+  if (!state.pet) return 'normal';
+  const totalActions = Math.max(1, state.pet.totalActions);
+  const loveAvg = state.pet.loveTotal / totalActions;
+  // loveAvg approximates how much care quality
+  if (state.pet.stats.love >= 70 && loveAvg >= 2) return 'happy';
+  if (state.pet.stats.love <= 30 || loveAvg < 0) return 'sad';
+  return 'normal';
+}
+
+// ============================================================
+// Stat decay — called periodically + on action
+// ============================================================
+function clamp(n, lo = 0, hi = 100) { return Math.max(lo, Math.min(hi, n)); }
+function applyDecay() {
+  if (!state.pet) return;
+  const now = Date.now();
+  const dtMs = now - state.pet.lastUpdate;
+  if (dtMs <= 0) return;
+  const mult = SPEED[state.speed].mult;
+  const gameHours = (dtMs / 1000 / 3600) * mult;
+  if (gameHours < 0.001) return;
+  // Stage-dependent decay rates (per game hour)
+  const stage = computeStage();
+  const rates = {
+    egg:   { hunger: 0,    happy: 0,    clean: 0,    energy: -0.5 },
+    baby:  { hunger: -3,   happy: -2.5, clean: -2,   energy: state.pet.asleep ? 5 : -1.5 },
+    child: { hunger: -4,   happy: -3.5, clean: -2.5, energy: state.pet.asleep ? 6 : -3 },
+    adult: { hunger: -3,   happy: -3,   clean: -2,   energy: state.pet.asleep ? 5 : -2.5 },
+  }[stage];
+  const p = state.pet;
+  p.stats.hunger = clamp(p.stats.hunger + rates.hunger * gameHours);
+  p.stats.happy  = clamp(p.stats.happy  + rates.happy  * gameHours);
+  p.stats.clean  = clamp(p.stats.clean  + rates.clean  * gameHours);
+  p.stats.energy = clamp(p.stats.energy + rates.energy * gameHours);
+
+  // Love decays slowly when pet is neglected (low stats)
+  const lowCount = ['hunger','happy','clean'].filter(s => p.stats[s] < 30).length;
+  if (lowCount >= 2) {
+    p.stats.love = clamp(p.stats.love - 1 * gameHours);
+    p.loveTotal -= 0.5 * gameHours;
+  }
+  // Sickness — all stats critically low
+  if (p.stats.hunger < 15 && p.stats.clean < 15) {
+    if (!p.sickSince) p.sickSince = now;
+  } else {
+    p.sickSince = null;
+  }
+  p.lastUpdate = now;
+}
+
+// ============================================================
+// Action handlers
+// ============================================================
+function recordAction(loveDelta) {
+  if (!state.pet) return;
+  state.pet.totalActions += 1;
+  state.pet.loveTotal += loveDelta;
+  state.pet.stats.love = clamp(state.pet.stats.love + loveDelta);
+}
+function actFeed() {
+  if (!state.pet) return;
+  applyDecay();
+  const stage = computeStage();
+  if (stage === 'egg') return saySpeech(T().notReadyEgg(state.pet.name), { npc: true });
+  if (state.pet.asleep) { actSleep(); /* wakes up */ }
+  const p = state.pet;
+  let msg, loveDelta = 1;
+  if (p.stats.hunger >= 90) {
+    msg = T().speechFedNo(p.name);
+    loveDelta = -1;  // bad feeding when not hungry
+  } else if (p.stats.hunger >= 70) {
+    msg = T().speechFedOk(p.name);
+    p.stats.hunger = clamp(p.stats.hunger + 15);
+    loveDelta = 0;
+  } else if (p.stats.hunger < 40) {
+    msg = T().speechFedGood(p.name);
+    p.stats.hunger = clamp(p.stats.hunger + 35);
+    loveDelta = 2;
+  } else {
+    msg = T().speechFedGood(p.name);
+    p.stats.hunger = clamp(p.stats.hunger + 25);
+    loveDelta = 1;
+  }
+  // Side effects
+  p.stats.clean = clamp(p.stats.clean - 5);
+  if (loveDelta < 0) SFX.bad(); else if (p.stats.hunger >= 90) SFX.eatFull();
+  else SFX.feed();
+  recordAction(loveDelta);
+  logEntry(T().logFeed);
+  saySpeech(msg, { npc: true });
+  savePet(); renderAll();
+}
+function actPlay() {
+  if (!state.pet) return;
+  applyDecay();
+  const stage = computeStage();
+  if (stage === 'egg') return saySpeech(T().notReadyEgg(state.pet.name), { npc: true });
+  if (state.pet.asleep) { actSleep(); }
+  const p = state.pet;
+  if (p.stats.energy < 25) {
+    SFX.bad();
+    return saySpeech(T().speechPlayTired(p.name), { npc: true });
+  }
+  // Baby = simple play, child/adult = minigame
+  if (stage === 'baby') {
+    p.stats.happy = clamp(p.stats.happy + 15);
+    p.stats.energy = clamp(p.stats.energy - 8);
+    recordAction(1);
+    SFX.play();
+    logEntry(T().logPlay);
+    saySpeech(T().speechPlay(p.name), { npc: true });
+    savePet(); renderAll();
+  } else {
+    // Start a minigame
+    startMinigame();
+  }
+}
+function actClean() {
+  if (!state.pet) return;
+  applyDecay();
+  const stage = computeStage();
+  if (stage === 'egg') return saySpeech(T().notReadyEgg(state.pet.name), { npc: true });
+  if (state.pet.asleep) { actSleep(); }
+  const p = state.pet;
+  const wasDirty = p.stats.clean < 50;
+  const resist = stage === 'baby' || stage === 'child';
+  p.stats.clean = 100;
+  if (resist) p.stats.happy = clamp(p.stats.happy - 5);
+  SFX.clean();
+  recordAction(wasDirty ? 2 : 1);
+  logEntry(T().logClean);
+  saySpeech(resist ? T().speechCleanResist(p.name) : T().speechCleanOk(p.name), { npc: true });
+  savePet(); renderAll();
+}
+function actSleep() {
+  if (!state.pet) return;
+  applyDecay();
+  const stage = computeStage();
+  if (stage === 'egg') return;
+  const p = state.pet;
+  if (p.asleep) {
+    p.asleep = false;
+    SFX.wake();
+    logEntry(T().logWake);
+    saySpeech(T().speechWakeUp(p.name), { npc: true });
+    recordAction(0);
+  } else {
+    p.asleep = true;
+    SFX.sleep();
+    logEntry(T().logSleep);
+    saySpeech(T().speechSleepStart(p.name), { npc: true });
+    recordAction(p.stats.energy < 40 ? 2 : 1);
+  }
+  savePet(); renderAll();
+}
+function actStatsCheck() {
+  if (!state.pet) return;
+  applyDecay();
+  const p = state.pet;
+  SFX.stat();
+  saySpeech(T().statsReport(
+    Math.round(p.stats.hunger), Math.round(p.stats.happy),
+    Math.round(p.stats.clean), Math.round(p.stats.energy),
+    Math.round(p.stats.love)
+  ));
+  renderAll();
+}
+function actInfo() {
+  if (!state.pet) return;
+  applyDecay();
+  const p = state.pet;
+  const stage = computeStage();
+  const stageName = stage === 'adult' ? T()['stageAdult' + (p.adultType[0].toUpperCase() + p.adultType.slice(1))] : T()['stage' + stage[0].toUpperCase() + stage.slice(1)];
+  const ageStr = formatAge();
+  const daysAlive = Math.floor((Date.now() - p.bornAt) / 1000 / 86400);
+  SFX.stat();
+  saySpeech(T().infoReport(p.name, stageName, ageStr, daysAlive));
+}
+function actHelp() { SFX.stat(); saySpeech(T().keyHelp); }
+
+// ============================================================
+// Evolution checker — called periodically
+// ============================================================
+function checkEvolution() {
+  if (!state.pet) return;
+  const newStage = computeStage();
+  if (newStage === state.pet.stage) return;
+  // Stage change!
+  const oldStage = state.pet.stage;
+  state.pet.stage = newStage;
+  if (newStage === 'adult' && !state.pet.adultType) {
+    state.pet.adultType = computeAdultType();
+  }
+  let msg = '';
+  if (oldStage === 'egg' && newStage === 'baby') {
+    msg = T().eggHatch(state.pet.name);
+    logEntry(T().logHatch);
+  } else if (newStage === 'baby') {
+    msg = T().evolveBaby(state.pet.name);
+    logEntry(T().logEvolve + ' → ' + T().stageBaby);
+  } else if (newStage === 'child') {
+    msg = T().evolveChild(state.pet.name);
+    logEntry(T().logEvolve + ' → ' + T().stageChild);
+  } else if (newStage === 'adult') {
+    const t = state.pet.adultType;
+    if (t === 'happy') msg = T().evolveAdultHappy(state.pet.name);
+    else if (t === 'sad') msg = T().evolveAdultSad(state.pet.name);
+    else msg = T().evolveAdultNormal(state.pet.name);
+    logEntry(T().logEvolve + ' → ' + T()['stageAdult' + (t[0].toUpperCase() + t.slice(1))]);
+  }
+  SFX.evolve();
+  showStageFlash(newStage);
+  saySpeech(msg);
+  savePet();
+  renderAll();
+}
+
+function showStageFlash(stage) {
+  const flash = document.getElementById('stage-flash');
+  const title = document.getElementById('flash-title');
+  const sub = document.getElementById('flash-sub');
+  let h = '', s = '';
+  if (stage === 'baby') { h = '🐣'; s = T().stageBaby; }
+  else if (stage === 'child') { h = '🌱'; s = T().stageChild; }
+  else if (stage === 'adult') {
+    const t = state.pet.adultType;
+    h = t === 'happy' ? '✨' : t === 'sad' ? '🌧' : '🌳';
+    s = T()['stageAdult' + (t[0].toUpperCase() + t.slice(1))];
+  }
+  title.textContent = h;
+  sub.textContent = s;
+  flash.classList.add('show');
+  setTimeout(() => flash.classList.remove('show'), 2200);
+}
+
+// ============================================================
+// Render — UI + Dot Pad
+// ============================================================
+function logEntry(text) {
+  const time = new Date().toLocaleTimeString();
+  state.log.unshift({ text, time });
+  if (state.log.length > 30) state.log.pop();
+  const list = document.getElementById('log-list');
+  if (list) {
+    list.innerHTML = state.log.map(e =>
+      `<div class="log-entry"><span class="log-time">${e.time}</span>${e.text}</div>`
+    ).join('');
+  }
+}
+function saySpeech(text, opts) {
+  state.lastSpeech = text;
+  const sp = document.getElementById('speech-text');
+  if (sp) sp.textContent = text;
+  speak(text, opts);
+}
+function formatAge() {
+  if (!state.pet) return '—';
+  const realMs = Date.now() - state.pet.bornAt;
+  const gameH = getGameHoursAlive();
+  if (gameH < 1) return T().ageMinutes(Math.round(gameH * 60));
+  if (gameH < 24) return T().ageHours(Math.round(gameH));
+  return T().ageDays(Math.floor(gameH / 24));
+}
+function renderAll() {
+  if (!state.pet) return;
+  const p = state.pet;
+  const stage = computeStage();
+  // Top header chip
+  document.getElementById('pet-name-display').textContent = p.name;
+  document.getElementById('pet-stage-chip').textContent = T()['chip' + stage.toUpperCase()];
+  // Stats
+  const stats = [
+    ['hunger', p.stats.hunger],
+    ['happy', p.stats.happy],
+    ['clean', p.stats.clean],
+    ['energy', p.stats.energy],
+    ['love', p.stats.love],
+  ];
+  stats.forEach(([key, val]) => {
+    const row = document.querySelector(`.stat-row[data-stat="${key}"]`);
+    if (!row) return;
+    const fill = row.querySelector('.stat-bar-fill');
+    const vEl = document.getElementById('val-' + key);
+    const v = Math.round(val);
+    if (fill) fill.style.width = v + '%';
+    if (vEl) vEl.textContent = v;
+    if (v < 25 && key !== 'love') row.classList.add('low');
+    else row.classList.remove('low');
+  });
+  // Mood icon
+  const moodEl = document.getElementById('pet-mood-icon');
+  if (moodEl) moodEl.textContent = getMoodIcon();
+  // Info
+  document.getElementById('val-age').textContent = formatAge();
+  document.getElementById('val-stage').textContent = stage === 'adult'
+    ? T()['stageAdult' + (p.adultType[0].toUpperCase() + p.adultType.slice(1))]
+    : T()['stage' + stage[0].toUpperCase() + stage.slice(1)];
+  document.getElementById('val-time').textContent = T()['speed' + state.speed[0].toUpperCase() + state.speed.slice(1)];
+  // Pet visual (SVG)
+  renderPetSvg();
+  // Sleep button label
+  document.getElementById('lbl-sleep').textContent = p.asleep ? T().actWake : T().actSleep;
+  // Dot Pad
+  renderDotpad();
+}
+function getMoodIcon() {
+  const p = state.pet;
+  const stage = computeStage();
+  if (stage === 'egg') return '🥚';
+  if (p.asleep) return '💤';
+  if (p.sickSince) return '🤒';
+  const low = ['hunger','happy','clean','energy'].filter(s => p.stats[s] < 30);
+  if (low.length >= 2) return '😟';
+  if (low.includes('hunger')) return '🍽';
+  if (low.includes('happy')) return '😐';
+  if (low.includes('clean')) return '🧼';
+  if (low.includes('energy')) return '🥱';
+  if (p.stats.happy >= 80 && p.stats.love >= 70) return '😄';
+  if (stage === 'baby') return '🐣';
+  if (stage === 'child') return '🌱';
+  if (stage === 'adult') {
+    return p.adultType === 'happy' ? '✨' : p.adultType === 'sad' ? '🌧' : '🐾';
+  }
+  return '😊';
+}
+
+// ============================================================
+// SVG pet visualization (screen)
+// ============================================================
+function renderPetSvg() {
+  const c = document.getElementById('pet-stage-vis');
+  if (!c) return;
+  const p = state.pet;
+  const stage = computeStage();
+  const mood = p.asleep ? 'sleep' : p.sickSince ? 'sick' :
+    (p.stats.happy >= 70 && p.stats.love >= 60) ? 'happy' :
+    (p.stats.happy < 30 || p.stats.hunger < 25) ? 'sad' : 'idle';
+  c.innerHTML = SVG_STAGES[stage]
+    ? SVG_STAGES[stage](mood, p.adultType)
+    : SVG_STAGES.egg(mood);
+}
+
+// Pet stage SVG — pixel-style "Game Boy" aesthetic, 14x14 grid
+function pxGrid(grid, color = '#ff7a45', bg = 'transparent', scale = 18) {
+  // grid: 2D array of 0/1/2 (0=bg, 1=fg, 2=accent)
+  const rows = grid.length, cols = grid[0].length;
+  let svg = `<svg viewBox="0 0 ${cols * scale} ${rows * scale}" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">`;
+  if (bg !== 'transparent') svg += `<rect width="100%" height="100%" fill="${bg}"/>`;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const v = grid[r][c];
+      if (v === 1) svg += `<rect x="${c*scale}" y="${r*scale}" width="${scale}" height="${scale}" fill="${color}"/>`;
+      else if (v === 2) svg += `<rect x="${c*scale}" y="${r*scale}" width="${scale}" height="${scale}" fill="#d65a2a"/>`;
+      else if (v === 3) svg += `<rect x="${c*scale}" y="${r*scale}" width="${scale}" height="${scale}" fill="#0a0c12"/>`;
+      else if (v === 4) svg += `<rect x="${c*scale}" y="${r*scale}" width="${scale}" height="${scale}" fill="#ffd9c2"/>`;
+    }
+  }
+  svg += `</svg>`;
+  return svg;
+}
+
+const SVG_STAGES = {
+  egg: (mood) => {
+    // Simple oval egg with possible wobble crack
+    const G = [
+      [0,0,0,1,1,1,1,1,0,0,0],
+      [0,0,1,1,4,4,4,1,1,0,0],
+      [0,1,1,4,4,4,4,4,1,1,0],
+      [1,1,4,4,4,4,4,4,4,1,1],
+      [1,1,4,4,4,4,4,4,4,1,1],
+      [1,1,4,4,4,4,4,4,4,1,1],
+      [0,1,1,4,4,4,4,4,1,1,0],
+      [0,0,1,1,4,4,4,1,1,0,0],
+      [0,0,0,1,1,1,1,1,0,0,0],
+    ];
+    return pxGrid(G);
+  },
+  baby: (mood) => {
+    // Round chick-like body, big eyes
+    const closed = mood === 'sleep';
+    const sad = mood === 'sad' || mood === 'sick';
+    const eye = closed ? 3 : 3;
+    const G = [
+      [0,0,0,1,1,1,1,1,0,0,0],
+      [0,0,1,1,1,1,1,1,1,0,0],
+      [0,1,1,1,1,1,1,1,1,1,0],
+      [0,1,1,eye,1,1,1,eye,1,1,0],
+      [0,1,1,1,1,1,1,1,1,1,0],
+      [0,1,1,1,1,sad?3:2,sad?3:0,1,1,1,0],
+      [0,1,1,1,1,1,1,1,1,1,0],
+      [0,0,1,1,1,1,1,1,1,0,0],
+      [0,0,0,1,1,0,0,1,1,0,0],
+    ];
+    if (closed) {
+      G[3][3] = 1; G[3][7] = 1;
+    }
+    return pxGrid(G);
+  },
+  child: (mood) => {
+    const closed = mood === 'sleep';
+    const happy = mood === 'happy';
+    const sad = mood === 'sad' || mood === 'sick';
+    const G = [
+      [0,0,0,1,1,1,1,1,0,0,0],
+      [0,0,1,1,1,1,1,1,1,0,0],
+      [0,1,1,1,1,1,1,1,1,1,0],
+      [0,1,closed?1:3,1,1,1,1,closed?1:3,1,1,0],
+      [0,1,1,1,1,1,1,1,1,1,0],
+      [0,1,1,1,happy?2:1,happy?2:1,1,1,1,1,0],
+      [0,1,1,1,1,sad?3:2,sad?3:0,1,1,1,0],
+      [0,1,1,1,1,1,1,1,1,1,0],
+      [0,0,1,1,1,1,1,1,1,0,0],
+      [1,0,1,0,0,0,0,0,1,0,1],
+      [1,0,0,0,0,0,0,0,0,0,1],
+    ];
+    return pxGrid(G);
+  },
+  adult: (mood, type) => {
+    const happy = type === 'happy';
+    const sad = type === 'sad';
+    const sleeping = mood === 'sleep';
+    const eyeR = sleeping ? 1 : 3;
+    // Adult — taller, more defined. Happy raises arms, sad droops.
+    const G = [
+      [0,0,0,1,1,1,1,1,1,0,0,0,0],
+      [0,0,1,1,1,1,1,1,1,1,0,0,0],
+      [0,1,1,1,1,1,1,1,1,1,1,0,0],
+      [0,1,1,eyeR,1,1,1,1,eyeR,1,1,0,0],
+      [0,1,1,1,1,1,1,1,1,1,1,0,0],
+      [0,1,1,1,1, happy?2:1, happy?2:1, 1,1,1,1,0,0],
+      [0,1,1,1,1, sad?3:2, sad?3:0, 1,1,1,1,0,0],
+      [0,1,1,1,1,1,1,1,1,1,1,0,0],
+      [happy?1:0, 1,1,1,1,1,1,1,1,1,1, happy?1:0, 0],
+      [happy?1:0, 1,1,1,1,1,1,1,1,1,1, happy?1:0, 0],
+      [0,1,1,1,1,1,1,1,1,1,1,0,0],
+      [0,0,1,1,1, sad?0:1, sad?0:1, 1,1,1,0,0,0],
+      [1,0,1,1,0,0,0,0,0,1,1,0,1],
+      [1,0,0,0,0,0,0,0,0,0,0,0,1],
+    ];
+    return pxGrid(G);
+  },
+};
+
+// ============================================================
+// Dot Pad rendering — pet centered on 300 cells (30×10)
+// ============================================================
+const DP_W = 30, DP_H = 10;
+function petDotPattern() {
+  // Returns 30×10 cells array (Uint8Array), each cell 8-bit dot mask
+  const cells = new Uint8Array(DP_W * DP_H);
+  if (!state.pet) return cells;
+  const stage = computeStage();
+  const p = state.pet;
+  const sleeping = p.asleep;
+  // Stats bars at edges
+  // Top edge (row 0): hunger bar (cols 0-14), happiness bar (cols 15-29) — using dot 1+4 (top row)
+  const barTop = (val, startCol, len) => {
+    const filled = Math.round((val / 100) * len);
+    for (let i = 0; i < len; i++) {
+      const c = startCol + i;
+      if (c < 0 || c >= DP_W) continue;
+      if (i < filled) cells[0 * DP_W + c] |= 0x09; // dots 1+4 — visible top
+    }
+  };
+  barTop(p.stats.hunger, 0, 14);
+  barTop(p.stats.happy, 16, 14);
+  // Bottom edge (row 9): clean bar (cols 0-14), energy bar (cols 15-29) — using dots 7+8
+  const barBot = (val, startCol, len) => {
+    const filled = Math.round((val / 100) * len);
+    for (let i = 0; i < len; i++) {
+      const c = startCol + i;
+      if (c < 0 || c >= DP_W) continue;
+      if (i < filled) cells[9 * DP_W + c] |= 0xC0; // dots 7+8 — visible bottom
+    }
+  };
+  barBot(p.stats.clean, 0, 14);
+  barBot(p.stats.energy, 16, 14);
+  // Pet centered — choose pattern by stage
+  const pattern = sleeping ? PET_DOT.sleep[stage] : PET_DOT[stage] || PET_DOT.egg;
+  // Center pattern in cells: pattern is a 2D array of dot masks for cells.
+  const pH = pattern.length, pW = pattern[0].length;
+  const ox = Math.floor((DP_W - pW) / 2);
+  const oy = Math.floor((DP_H - pH) / 2);
+  for (let r = 0; r < pH; r++) {
+    for (let c = 0; c < pW; c++) {
+      const dr = oy + r, dc = ox + c;
+      if (dr < 0 || dr >= DP_H || dc < 0 || dc >= DP_W) continue;
+      const v = pattern[r][c];
+      if (v) cells[dr * DP_W + dc] |= v;
+    }
+  }
+  return cells;
+}
+
+// PET_DOT — each entry is a 2D array of 8-dot braille cell masks
+// dot bits: 1=0x01 (TL), 2=0x02 (CL), 3=0x04 (BL), 4=0x08 (TR), 5=0x10 (CR), 6=0x20 (BR), 7=0x40 (BL extra), 8=0x80 (BR extra)
+// 0xFF = full 8-dot cell
+const PET_DOT = {
+  egg: [
+    [0x00, 0x18, 0x3F, 0x3F, 0x24, 0x00],
+    [0x00, 0x3F, 0x00, 0x00, 0x3F, 0x00],
+    [0x3F, 0x00, 0x00, 0x00, 0x00, 0x3F],
+    [0x3F, 0x00, 0x00, 0x00, 0x00, 0x3F],
+    [0x00, 0x3F, 0x00, 0x00, 0x3F, 0x00],
+    [0x00, 0x18, 0x3F, 0x3F, 0x24, 0x00],
+  ],
+  baby: [
+    [0x00, 0x18, 0x3F, 0x3F, 0x24, 0x00],
+    [0x00, 0xFF, 0x40, 0x40, 0xFF, 0x00],  // body + tiny eyes (40 = dot 7)
+    [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF],
+    [0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F],
+    [0x00, 0x18, 0x00, 0x00, 0x18, 0x00],  // feet
+  ],
+  child: [
+    [0x00, 0x00, 0x3F, 0x3F, 0x00, 0x00],   // head top
+    [0x00, 0x3F, 0xFF, 0xFF, 0x3F, 0x00],
+    [0x3F, 0xFF, 0x09, 0x09, 0xFF, 0x3F],   // eyes (dot 1+4)
+    [0x3F, 0xFF, 0xFF, 0xFF, 0xFF, 0x3F],   // mouth area
+    [0x3F, 0xFF, 0xFF, 0xFF, 0xFF, 0x3F],
+    [0x00, 0x3F, 0x3F, 0x3F, 0x3F, 0x00],   // body taper
+    [0x00, 0x00, 0x18, 0x18, 0x00, 0x00],   // feet
+  ],
+  adult: [
+    [0x00, 0x00, 0x3F, 0x3F, 0x3F, 0x00, 0x00],
+    [0x00, 0x3F, 0xFF, 0xFF, 0xFF, 0x3F, 0x00],
+    [0x3F, 0xFF, 0x09, 0xFF, 0x09, 0xFF, 0x3F],
+    [0x3F, 0xFF, 0xFF, 0x24, 0xFF, 0xFF, 0x3F],  // mouth dot
+    [0x3F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x3F],
+    [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF],
+    [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF],
+    [0x00, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x00],
+    [0x00, 0x00, 0x18, 0x00, 0x18, 0x00, 0x00],
+  ],
+  sleep: {
+    egg: [
+      [0x00, 0x18, 0x3F, 0x3F, 0x24, 0x00],
+      [0x00, 0x3F, 0x00, 0x00, 0x3F, 0x00],
+      [0x3F, 0x00, 0x00, 0x00, 0x00, 0x3F],
+      [0x3F, 0x00, 0x00, 0x00, 0x00, 0x3F],
+      [0x00, 0x3F, 0x00, 0x00, 0x3F, 0x00],
+      [0x00, 0x18, 0x3F, 0x3F, 0x24, 0x00],
+    ],
+    baby: [
+      [0x00, 0x18, 0x3F, 0x3F, 0x24, 0x00],
+      [0x00, 0xFF, 0x12, 0x12, 0xFF, 0x00],  // closed eyes (dot 2+5)
+      [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF],
+      [0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F],
+      [0x00, 0x18, 0x00, 0x00, 0x18, 0x00],
+    ],
+    child: [
+      [0x00, 0x00, 0x3F, 0x3F, 0x00, 0x00],
+      [0x00, 0x3F, 0xFF, 0xFF, 0x3F, 0x00],
+      [0x3F, 0xFF, 0x12, 0x12, 0xFF, 0x3F],
+      [0x3F, 0xFF, 0xFF, 0xFF, 0xFF, 0x3F],
+      [0x3F, 0xFF, 0xFF, 0xFF, 0xFF, 0x3F],
+      [0x00, 0x3F, 0x3F, 0x3F, 0x3F, 0x00],
+      [0x00, 0x00, 0x18, 0x18, 0x00, 0x00],
+    ],
+    adult: [
+      [0x00, 0x00, 0x3F, 0x3F, 0x3F, 0x00, 0x00],
+      [0x00, 0x3F, 0xFF, 0xFF, 0xFF, 0x3F, 0x00],
+      [0x3F, 0xFF, 0x12, 0xFF, 0x12, 0xFF, 0x3F],
+      [0x3F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x3F],
+      [0x3F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x3F],
+      [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF],
+      [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF],
+      [0x00, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x00],
+      [0x00, 0x00, 0x18, 0x00, 0x18, 0x00, 0x00],
+    ],
+  },
+};
+
+function renderDotpad() {
+  if (!state.dotpadConnected || !window.DotPad) return;
+  try {
+    const cells = petDotPattern();
+    const { sdk, DisplayMode, DataCodes } = window.DotPad;
+    sdk.displayGraphicData(cells, DisplayMode.Graphic, DataCodes.DisplayDataPacket);
+    // Also send a brief text line with stage + mood
+    if (state.pet) {
+      const p = state.pet;
+      const stage = computeStage();
+      const stageLbl = stage === 'adult' ? (T()['stageAdult' + (p.adultType[0].toUpperCase() + p.adultType.slice(1))]) : T()['stage' + stage[0].toUpperCase() + stage.slice(1)];
+      const line = `${p.name} ${stageLbl}`;
+      // Text rendering: send braille-encoded line via SDK (depends on SDK's text mode)
+      try { sdk.displayTextData(line, DataCodes.DisplayTextPacket); } catch(e){}
+    }
+  } catch(e) { console.warn('[dotpad] render failed:', e); }
+}
+
+// ============================================================
+// Dot Pad connection
+// ============================================================
+async function connectBle() {
+  if (!window.DotPad) {
+    showToast('Dot Pad SDK not loaded', 'danger');
+    return;
+  }
+  try {
+    document.getElementById('conn-text').textContent = T().connecting;
+    const device = await window.DotPad.sdk.connectBleDevice();
+    state.dotpadDevice = device;
+    state.dotpadConnected = true;
+    updateConnUi();
+    showToast(T().toastConnected, 'care');
+    SFX.happy();
+    closeConnect();
+    setTimeout(renderDotpad, 200);
+  } catch(e) {
+    console.warn('[ble] failed:', e);
+    document.getElementById('conn-text').textContent = T().disconnected;
+    showToast('Connect failed: ' + (e.message || e), 'warn');
+  }
+}
+async function connectUsb() {
+  if (!window.DotPad) { showToast('Dot Pad SDK not loaded', 'danger'); return; }
+  try {
+    document.getElementById('conn-text').textContent = T().connecting;
+    const device = await window.DotPad.sdk.connectUsbDevice();
+    state.dotpadDevice = device;
+    state.dotpadConnected = true;
+    updateConnUi();
+    showToast(T().toastConnected, 'care');
+    SFX.happy();
+    closeConnect();
+    setTimeout(renderDotpad, 200);
+  } catch(e) {
+    console.warn('[usb] failed:', e);
+    document.getElementById('conn-text').textContent = T().disconnected;
+    showToast('Connect failed: ' + (e.message || e), 'warn');
+  }
+}
+function updateConnUi() {
+  const dot = document.getElementById('conn-dot');
+  const text = document.getElementById('conn-text');
+  if (state.dotpadConnected) {
+    dot.classList.add('connected');
+    text.textContent = T().connected;
+  } else {
+    dot.classList.remove('connected');
+    text.textContent = T().disconnected;
+  }
+}
+function openConnect() { document.getElementById('connect-overlay').classList.add('open'); }
+function closeConnect() { document.getElementById('connect-overlay').classList.remove('open'); }
+
+// ============================================================
+// Minigame — Number Guess (1-4, with hints) + Echo Rhythm
+// ============================================================
+function startMinigame() {
+  // Randomly pick one of the two minigames
+  const which = Math.random() < 0.5 ? 'guess' : 'rhythm';
+  if (which === 'guess') startGuess();
+  else startRhythm();
+}
+function startGuess() {
+  const overlay = document.getElementById('mg-overlay');
+  const target = 1 + Math.floor(Math.random() * 4);
+  state.mg = { type: 'guess', target, attempts: 0 };
+  document.getElementById('mg-title').textContent = T().mgGuessTitle;
+  document.getElementById('mg-sub').textContent = T().mgGuessSub(state.pet.name);
+  document.getElementById('mg-display').textContent = '?';
+  // Show 4 buttons
+  const bg = document.getElementById('mg-buttons');
+  bg.innerHTML = [1,2,3,4].map(n => `<button type="button" data-mg-num="${n}">${n}</button>`).join('');
+  bg.querySelectorAll('button').forEach(b => {
+    b.addEventListener('click', () => guessNumber(parseInt(b.dataset.mgNum)));
+  });
+  overlay.classList.add('open');
+  saySpeech(T().mgGuessSub(state.pet.name));
+}
+function guessNumber(n) {
+  if (!state.mg || state.mg.type !== 'guess') return;
+  state.mg.attempts++;
+  SFX.click();
+  const target = state.mg.target;
+  const disp = document.getElementById('mg-display');
+  if (n === target) {
+    SFX.happy();
+    disp.textContent = `🎉 ${target}!`;
+    state.pet.stats.happy = clamp(state.pet.stats.happy + 25);
+    state.pet.stats.energy = clamp(state.pet.stats.energy - 10);
+    recordAction(2);
+    logEntry(T().logPlay + ' (★ ' + T().mgGuessTitle + ')');
+    saySpeech(T().mgGuessCorrect(state.pet.name), { npc: true });
+    setTimeout(() => closeMinigame(), 1500);
+  } else {
+    if (n < target) saySpeech(T().mgGuessHigher);
+    else saySpeech(T().mgGuessLower);
+    disp.textContent = n < target ? '↑' : '↓';
+    if (state.mg.attempts >= 4) {
+      SFX.bad();
+      disp.textContent = '😅';
+      state.pet.stats.happy = clamp(state.pet.stats.happy + 10);
+      recordAction(1);
+      saySpeech(T().mgGuessWrong(state.pet.name), { npc: true });
+      setTimeout(() => closeMinigame(), 1800);
+    }
+  }
+  savePet(); renderAll();
+}
+function startRhythm() {
+  const len = 3 + Math.floor(Math.random() * 2);  // 3-4 notes
+  const seq = Array.from({ length: len }, () => 1 + Math.floor(Math.random() * 4));
+  state.mg = { type: 'rhythm', seq, input: [], step: 'listen' };
+  document.getElementById('mg-title').textContent = T().mgRhythmTitle;
+  document.getElementById('mg-sub').textContent = T().mgRhythmSub(state.pet.name);
+  document.getElementById('mg-display').textContent = T().mgRhythmListen;
+  const bg = document.getElementById('mg-buttons');
+  bg.innerHTML = [1,2,3,4].map(n => `<button type="button" data-mg-num="${n}" disabled>${n}</button>`).join('');
+  bg.querySelectorAll('button').forEach(b => {
+    b.addEventListener('click', () => rhythmInput(parseInt(b.dataset.mgNum)));
+  });
+  document.getElementById('mg-overlay').classList.add('open');
+  saySpeech(T().mgRhythmSub(state.pet.name) + ' ' + T().mgRhythmListen);
+  // Play sequence
+  setTimeout(() => {
+    seq.forEach((n, i) => {
+      setTimeout(() => {
+        _tone(440 + n * 100, 0.25, 'sine', 0.1);
+        document.getElementById('mg-display').textContent = '🔊 ' + n;
+      }, i * 600);
+    });
+    setTimeout(() => {
+      state.mg.step = 'input';
+      document.getElementById('mg-display').textContent = '🎤';
+      saySpeech(T().mgRhythmYourTurn);
+      document.getElementById('mg-buttons').querySelectorAll('button').forEach(b => b.disabled = false);
+    }, seq.length * 600 + 500);
+  }, 700);
+}
+function rhythmInput(n) {
+  if (!state.mg || state.mg.type !== 'rhythm' || state.mg.step !== 'input') return;
+  SFX.click();
+  _tone(440 + n * 100, 0.18, 'sine', 0.1);
+  state.mg.input.push(n);
+  const i = state.mg.input.length - 1;
+  if (state.mg.input[i] !== state.mg.seq[i]) {
+    // Wrong
+    SFX.bad();
+    document.getElementById('mg-display').textContent = '❌';
+    state.pet.stats.happy = clamp(state.pet.stats.happy + 8);
+    recordAction(1);
+    saySpeech(T().mgRhythmLose(state.pet.name), { npc: true });
+    setTimeout(() => closeMinigame(), 1600);
+    savePet(); renderAll();
+    return;
+  }
+  if (state.mg.input.length === state.mg.seq.length) {
+    // Win
+    SFX.happy();
+    document.getElementById('mg-display').textContent = '✨';
+    state.pet.stats.happy = clamp(state.pet.stats.happy + 30);
+    state.pet.stats.energy = clamp(state.pet.stats.energy - 10);
+    recordAction(3);
+    logEntry(T().logPlay + ' (★ ' + T().mgRhythmTitle + ')');
+    saySpeech(T().mgRhythmWin(state.pet.name), { npc: true });
+    setTimeout(() => closeMinigame(), 1800);
+    savePet(); renderAll();
+  } else {
+    document.getElementById('mg-display').textContent = '✓ ' + state.mg.input.length + '/' + state.mg.seq.length;
+  }
+}
+function closeMinigame() {
+  document.getElementById('mg-overlay').classList.remove('open');
+  state.mg = null;
+}
+
+// ============================================================
+// Toast
+// ============================================================
+function showToast(msg, kind = '') {
+  const t = document.getElementById('toast');
+  t.className = 'toast show ' + kind;
+  t.textContent = msg;
+  setTimeout(() => { t.classList.remove('show'); }, 2400);
+}
+
+// ============================================================
+// Settings modal
+// ============================================================
+function openSettings() {
+  document.getElementById('setup-lang').value = state.lang;
+  document.getElementById('setup-speed').value = state.speed;
+  document.getElementById('az-key').value = state.azureKey || '';
+  document.getElementById('az-region').value = state.azureRegion;
+  document.getElementById('az-voice').value = state.azureVoice;
+  document.getElementById('settings-overlay').classList.add('open');
+}
+function closeSettings() { document.getElementById('settings-overlay').classList.remove('open'); }
+function applySettings() {
+  const newLang = document.getElementById('setup-lang').value;
+  if (newLang !== state.lang) { state.lang = newLang; applyI18n(); }
+  state.speed = document.getElementById('setup-speed').value;
+  state.azureKey = document.getElementById('az-key').value.trim() || null;
+  state.azureRegion = document.getElementById('az-region').value;
+  state.azureVoice = document.getElementById('az-voice').value;
+  saveSettings();
+  closeSettings();
+  showToast(T().toastSaved, 'care');
+  renderAll();
+}
+
+// ============================================================
+// i18n apply
+// ============================================================
+function applyI18n() {
+  const t = T();
+  document.documentElement.lang = state.lang === 'ko' ? 'ko' : 'en';
+  document.title = t.pageTitle;
+  document.getElementById('splash-title').textContent = t.splashTitle;
+  document.getElementById('splash-tag').textContent = t.splashTag;
+  document.getElementById('lbl-name').textContent = t.lblName;
+  document.getElementById('pet-name-input').placeholder = t.placeholderName;
+  document.getElementById('splash-start').textContent = t.btnStart;
+  document.getElementById('splash-foot').innerHTML = t.footHint;
+  document.getElementById('btn-connect').textContent = t.headerConnect;
+  document.getElementById('btn-tts').textContent = t.voiceBtn;
+  document.getElementById('btn-sfx').textContent = t.sfxBtn;
+  document.getElementById('btn-lang').textContent = state.lang === 'en' ? 'EN' : 'KO';
+  document.getElementById('lbl-feed').textContent = t.actFeed;
+  document.getElementById('lbl-play').textContent = t.actPlay;
+  document.getElementById('lbl-clean').textContent = t.actClean;
+  document.getElementById('lbl-sleep').textContent = t.actSleep;
+  document.getElementById('lbl-stats').textContent = t.actStats + ' (F1+F2)';
+  document.getElementById('lbl-info').textContent = t.actInfo + ' (F3+F4)';
+  document.getElementById('lbl-help').textContent = t.actHelp;
+  document.getElementById('lbl-stat-hunger').textContent = t.statHunger;
+  document.getElementById('lbl-stat-happy').textContent = t.statHappy;
+  document.getElementById('lbl-stat-clean').textContent = t.statClean;
+  document.getElementById('lbl-stat-energy').textContent = t.statEnergy;
+  document.getElementById('lbl-stat-love').textContent = t.statLove;
+  document.getElementById('lbl-age').textContent = t.lblAge;
+  document.getElementById('lbl-stage').textContent = t.lblStage;
+  document.getElementById('lbl-time').textContent = t.lblTime;
+  document.getElementById('lbl-speed').textContent = t.lblSpeed;
+  const speedSel = document.getElementById('setup-speed');
+  if (speedSel) {
+    speedSel.options[0].textContent = t.speedDemo;
+    speedSel.options[1].textContent = t.speedNormal;
+    speedSel.options[2].textContent = t.speedSlow;
+  }
+  document.getElementById('speed-hint').textContent = t.speedHint;
+  document.getElementById('stats-panel-title').textContent = t.statsTitle;
+  document.getElementById('log-title').textContent = t.log;
+  document.getElementById('card-title-fresh').textContent = t.cardTitleFresh;
+  document.getElementById('connect-title').textContent = t.headerConnect;
+  document.getElementById('settings-title').textContent = t.settings;
+  updateConnUi();
+  renderAll();
+  refreshContinueSlot();
+}
+
+function refreshContinueSlot() {
+  const slot = document.getElementById('continue-slot');
+  const saved = loadPet();
+  if (saved && saved.name && !state.pet) {
+    const stage = (() => {
+      const real = Date.now() - saved.bornAt;
+      const mult = SPEED[state.speed].mult;
+      const h = (real / 1000 / 3600) * mult;
+      const evolve = SPEED[state.speed].evolveHoursFromHatch;
+      if (h < evolve.baby) return T().stageEgg;
+      if (h < evolve.child) return T().stageBaby;
+      if (h < evolve.adult) return T().stageChild;
+      return saved.adultType
+        ? T()['stageAdult' + (saved.adultType[0].toUpperCase() + saved.adultType.slice(1))]
+        : T().stageAdultNormal;
+    })();
+    slot.innerHTML = `
+      <div class="continue-card">
+        <div class="info">${T().cardTitleContinue}</div>
+        <div class="pet-name">${escapeHtml(saved.name)}</div>
+        <div class="stage">${stage}</div>
+        <div class="continue-row">
+          <button id="btn-resume" type="button">${T().btnContinue}</button>
+          <button id="btn-fresh" class="danger" type="button">${T().btnNewPet}</button>
+        </div>
+      </div>
+    `;
+    document.getElementById('btn-resume').addEventListener('click', () => resumePet(saved));
+    document.getElementById('btn-fresh').addEventListener('click', () => {
+      if (confirm(T().toastResetConfirm)) { resetPet(); refreshContinueSlot(); }
+    });
+  } else {
+    slot.innerHTML = '';
+  }
+}
+function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' })[c]); }
+
+function resumePet(saved) {
+  state.pet = saved;
+  hideSplashAndStart();
+}
+
+// ============================================================
+// Bootstrap
+// ============================================================
+function hideSplashAndStart() {
+  // Make sure audio is unlocked (user gesture)
+  unlockAudio();
+  document.getElementById('splash').classList.add('hidden');
+  applyDecay();
+  checkEvolution();
+  renderAll();
+  const initialMsg = state.pet.stage === 'egg' ? T().petWakeEgg :
+    state.pet.stage === 'baby' ? T().petWakeBaby(state.pet.name) :
+    state.pet.stage === 'child' ? T().petWakeChild(state.pet.name) :
+    T().petWakeAdult(state.pet.name);
+  saySpeech(initialMsg, { npc: state.pet.stage !== 'egg' });
+  if (state.pet.totalActions === 0) {
+    SFX.hatch();
+    logEntry(T().logHatch);
+    showToast(T().toastFirstHatch, 'care');
+  } else {
+    showToast(T().toastWelcome(state.pet.name), 'care');
+  }
+  // Start tick loop
+  startTickLoop();
+}
+function unlockAudio() {
+  try {
+    const silent = new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=');
+    silent.volume = 0.01;
+    silent.play().catch(()=>{});
+  } catch(e) {}
+  try { audioCtx(); } catch(e) {}
+  try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch(e) {}
+}
+
+let _tickTimer = null;
+function startTickLoop() {
+  if (_tickTimer) clearInterval(_tickTimer);
+  _tickTimer = setInterval(() => {
+    applyDecay();
+    checkEvolution();
+    renderAll();
+    // Save every 30 seconds
+    savePet();
+  }, 30000);
+  // Also update display every 5s for stat decay visualization
+  setInterval(() => {
+    applyDecay();
+    renderAll();
+  }, 5000);
+}
+
+// ============================================================
+// Key handlers (keyboard + Dot Pad)
+// ============================================================
+const _keyState = new Set();
+let _comboCheckTimeout = null;
+function handleKey(e) {
+  if (e.repeat) return;
+  if (state.mg) {
+    // In minigame: 1-4 → minigame buttons
+    if (e.key >= '1' && e.key <= '4') {
+      const n = parseInt(e.key);
+      if (state.mg.type === 'guess') guessNumber(n);
+      else if (state.mg.type === 'rhythm' && state.mg.step === 'input') rhythmInput(n);
+      e.preventDefault();
+    } else if (e.key === 'Escape') {
+      closeMinigame();
+      e.preventDefault();
+    }
+    return;
+  }
+  const key = e.key;
+  const fkMap = { 'F1':'feed', 'F2':'play', 'F3':'clean', 'F4':'sleep',
+                   '1':'feed', '2':'play', '3':'clean', '4':'sleep' };
+  const k = fkMap[key];
+  if (!k) return;
+  _keyState.add(k);
+  e.preventDefault();
+  if (_comboCheckTimeout) clearTimeout(_comboCheckTimeout);
+  _comboCheckTimeout = setTimeout(() => {
+    // Check combos
+    if (_keyState.has('feed') && _keyState.has('play')) { actStatsCheck(); }
+    else if (_keyState.has('clean') && _keyState.has('sleep')) { actInfo(); }
+    else if (_keyState.has('feed') && _keyState.has('sleep')) { actHelp(); }
+    else if (_keyState.size === 1) {
+      const only = [..._keyState][0];
+      if (only === 'feed') actFeed();
+      else if (only === 'play') actPlay();
+      else if (only === 'clean') actClean();
+      else if (only === 'sleep') actSleep();
+    }
+    _keyState.clear();
+  }, 120);
+}
+
+// ============================================================
+// Init
+// ============================================================
+function init() {
+  loadSettings();
+  applyI18n();
+  // Detect existing pet
+  const saved = loadPet();
+  if (saved && saved.name) {
+    // Show splash with continue card (handled in refreshContinueSlot)
+  }
+  // Event listeners
+  document.getElementById('splash-start').addEventListener('click', () => {
+    const nm = document.getElementById('pet-name-input').value.trim();
+    state.pet = defaultPet();
+    state.pet.name = nm || (state.lang === 'ko' ? '보토' : 'Boto');
+    state.pet.bornAt = Date.now();
+    state.pet.lastUpdate = Date.now();
+    state.pet.stats.hunger = 70; state.pet.stats.happy = 70;
+    state.pet.stats.clean = 90; state.pet.stats.energy = 90; state.pet.stats.love = 50;
+    savePet();
+    hideSplashAndStart();
+  });
+  document.getElementById('btn-connect').addEventListener('click', openConnect);
+  document.getElementById('connect-ble').addEventListener('click', connectBle);
+  document.getElementById('connect-usb').addEventListener('click', connectUsb);
+  document.getElementById('connect-close').addEventListener('click', closeConnect);
+  document.getElementById('btn-tts').addEventListener('click', () => {
+    state.ttsOn = !state.ttsOn;
+    if (!state.ttsOn) stopSpeaking();
+    document.getElementById('btn-tts').classList.toggle('active', state.ttsOn);
+    document.getElementById('btn-tts').setAttribute('aria-pressed', String(state.ttsOn));
+    saveSettings();
+  });
+  document.getElementById('btn-sfx').addEventListener('click', () => {
+    state.sfxOn = !state.sfxOn;
+    document.getElementById('btn-sfx').classList.toggle('active', state.sfxOn);
+    document.getElementById('btn-sfx').setAttribute('aria-pressed', String(state.sfxOn));
+    saveSettings();
+  });
+  document.getElementById('btn-lang').addEventListener('click', () => {
+    state.lang = state.lang === 'en' ? 'ko' : 'en';
+    saveSettings();
+    applyI18n();
+  });
+  document.getElementById('btn-settings').addEventListener('click', openSettings);
+  document.getElementById('open-settings-link').addEventListener('click', (e) => {
+    e.preventDefault(); openSettings();
+  });
+  document.getElementById('settings-cancel').addEventListener('click', closeSettings);
+  document.getElementById('settings-save').addEventListener('click', applySettings);
+  document.getElementById('reset-pet').addEventListener('click', () => {
+    const c = prompt(T().toastResetConfirm);
+    if (c === 'RESET') {
+      resetPet();
+      showToast(T().toastReset, 'warn');
+      closeSettings();
+      document.getElementById('splash').classList.remove('hidden');
+      refreshContinueSlot();
+    }
+  });
+  document.getElementById('act-feed').addEventListener('click', actFeed);
+  document.getElementById('act-play').addEventListener('click', actPlay);
+  document.getElementById('act-clean').addEventListener('click', actClean);
+  document.getElementById('act-sleep').addEventListener('click', actSleep);
+  document.getElementById('act-stats').addEventListener('click', actStatsCheck);
+  document.getElementById('act-info').addEventListener('click', actInfo);
+  document.getElementById('act-help').addEventListener('click', actHelp);
+  document.getElementById('btn-replay').addEventListener('click', () => {
+    if (state.lastSpeech) speak(state.lastSpeech);
+  });
+  document.getElementById('mg-close').addEventListener('click', closeMinigame);
+  document.addEventListener('keydown', handleKey);
+  // Save on unload
+  window.addEventListener('beforeunload', () => {
+    if (state.pet) savePet();
+  });
+  refreshContinueSlot();
+  // Initial language-aware placeholders
+  if (state.lang === 'ko') document.getElementById('pet-name-input').placeholder = '예: 보토';
+}
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
