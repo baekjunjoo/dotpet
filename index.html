@@ -201,39 +201,66 @@
     color: var(--text-dim); text-align: center;
   }
   .splash .footer a { color: var(--accent-dark); text-decoration: underline; }
+  .splash .tagline {
+    max-width: 560px; margin: 16px 20px 8px;
+    font-size: 15px;
+  }
+  .splash .splash-tools {
+    margin-top: 6px; font-size: 12px;
+    color: var(--text-dim); text-align: center;
+  }
+  .splash .splash-tools a { color: var(--accent-dark); text-decoration: underline; }
 
   /* ============================================================
-     Tamagotchi device frame
+     Tamagotchi device frame (uses tamagotchi.png if present, SVG fallback)
      ============================================================ */
   .tama-device {
     position: relative;
     width: 100%;
     max-width: 320px;
-    aspect-ratio: 400/450;
+    /* aspect matches reference image 2201:2600 ≈ 0.847 */
+    aspect-ratio: 2201/2600;
     margin: 0 auto 20px;
-    filter: drop-shadow(0 8px 18px rgba(15,20,30,.18));
+    filter: drop-shadow(0 10px 24px rgba(15,20,30,.22));
   }
   .tama-device.tama-sm { max-width: 240px; margin-bottom: 16px; }
+  .tama-device.tama-lg { max-width: 520px; margin-bottom: 24px; }
+  @media (max-width: 600px) {
+    .tama-device.tama-lg { max-width: 360px; }
+  }
   .tama-frame {
     position: absolute;
     inset: 0;
     width: 100%;
     height: 100%;
   }
-  /* Screen position matches SVG rect: x=104, y=116, w=192, h=170 on 400x450 viewBox */
+  .tama-frame img,
+  .tama-frame svg {
+    width: 100%; height: 100%;
+    object-fit: contain;
+    display: block;
+  }
+  /* Screen rect from reference image: approximately
+     left 22%, top 22%, width 56%, height 42% (4:3 aspect)
+     Adjust here if image is repositioned. */
   .tama-screen {
     position: absolute;
-    top: 25.8%;
-    left: 26%;
-    width: 48%;
-    height: 37.8%;
+    top: 22%;
+    left: 22%;
+    width: 56%;
+    height: 42%;
     background: #0a1020;
     display: flex;
     align-items: center;
     justify-content: center;
     overflow: hidden;
     border-radius: 4px;
-    box-shadow: inset 0 2px 6px rgba(0,0,0,0.4);
+  }
+  /* The screen rect in the PNG is already part of the image, so when using the image
+     we don't add another dark bg (would double-darken). The .tama-screen on top of
+     the image's dark screen area just contains content. Make it transparent in that case. */
+  .tama-device[data-using-image="true"] .tama-screen {
+    background: transparent;
   }
   .tama-screen .pet-svg-wrap {
     width: 86%; height: 86%;
@@ -253,6 +280,99 @@
     letter-spacing: 0.06em;
     animation: tamaBlink 2s ease-in-out infinite;
   }
+
+  /* LCD-styled splash form inside Tama screen */
+  .lcd-form {
+    width: 92%; height: 92%;
+    padding: 4% 6%;
+    display: flex; flex-direction: column;
+    gap: 8px;
+    color: #f5e9d4;
+    font-family: 'Courier New', monospace;
+    overflow-y: auto;
+  }
+  .lcd-form::-webkit-scrollbar { width: 4px; }
+  .lcd-form::-webkit-scrollbar-thumb { background: #f5e9d480; border-radius: 4px; }
+  .lcd-form .lcd-title {
+    text-align: center;
+    font-size: clamp(14px, 3vw, 22px);
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    color: #ffd84a;
+    margin: 0 0 6px;
+    text-shadow: 0 0 8px rgba(255,216,74,.4);
+  }
+  .lcd-form label {
+    font-size: clamp(10px, 1.6vw, 13px);
+    font-weight: 700;
+    color: #f5e9d4;
+    margin: 4px 0 2px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .lcd-form input {
+    width: 100%;
+    padding: 6px 10px;
+    border: 1.5px solid #f5e9d4;
+    border-radius: 4px;
+    background: rgba(245,233,212,0.08);
+    color: #f5e9d4;
+    font-family: inherit;
+    font-size: clamp(11px, 1.8vw, 14px);
+    font-weight: 600;
+  }
+  .lcd-form input::placeholder { color: #f5e9d480; }
+  .lcd-form input:focus {
+    outline: 2px solid #ffd84a;
+    outline-offset: 0;
+    background: rgba(245,233,212,0.16);
+  }
+  .lcd-form .lcd-btn {
+    width: 100%;
+    padding: 8px 12px;
+    background: #ffd84a;
+    color: #0a1020;
+    border: 2px solid #f5e9d4;
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: clamp(11px, 2vw, 15px);
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    margin-top: 4px;
+    text-shadow: none;
+    transition: background .12s, transform .08s;
+  }
+  .lcd-form .lcd-btn:hover { background: #ffe273; transform: translateY(-1px); }
+  .lcd-form .lcd-btn:active { transform: translateY(0); }
+  .lcd-form .lcd-btn:focus-visible {
+    outline: 3px solid #ffd84a;
+    outline-offset: 2px;
+  }
+  .lcd-form .lcd-continue {
+    background: rgba(46,138,92,0.15);
+    border: 1.5px solid #6dd99a;
+    border-radius: 4px;
+    padding: 6px 8px;
+    margin-bottom: 4px;
+  }
+  .lcd-form .lcd-continue .nm { font-weight: 800; color: #ffd84a; font-size: clamp(12px, 2vw, 16px); }
+  .lcd-form .lcd-continue .stg { font-size: clamp(9px, 1.4vw, 12px); color: #aef2c9; letter-spacing: 0.05em; }
+  .lcd-form .lcd-continue-row {
+    display: flex; gap: 6px; margin-top: 4px;
+  }
+  .lcd-form .lcd-continue-row button {
+    flex: 1; padding: 4px 6px;
+    background: transparent; color: #f5e9d4;
+    border: 1.5px solid #f5e9d4; border-radius: 3px;
+    font-family: inherit; font-size: clamp(9px, 1.5vw, 12px); font-weight: 700;
+    cursor: pointer;
+    letter-spacing: 0.04em;
+  }
+  .lcd-form .lcd-continue-row button.cont { background: #6dd99a; color: #0a1020; border-color: #6dd99a; }
+  .lcd-form .lcd-continue-row button.fresh { color: #ff9090; border-color: #ff9090; }
+  .lcd-form .lcd-continue-row button:hover { background: #f5e9d4; color: #0a1020; }
+  .lcd-form .lcd-continue-row button.fresh:hover { background: #ff9090; color: #0a1020; }
   @keyframes tamaBlink {
     0%, 100% { opacity: 0.95; }
     50% { opacity: 0.6; }
@@ -744,23 +864,22 @@
 
 <!-- Splash / onboarding -->
 <div class="splash" id="splash" role="dialog" aria-labelledby="splash-title" aria-modal="true">
-  <div class="tama-device tama-sm" aria-hidden="true">
-    <div class="tama-frame" id="splash-tama-frame"></div>
+  <h1 id="splash-title" class="sr-only">DotPet</h1>
+  <div class="tama-device tama-lg">
+    <div class="tama-frame" id="splash-tama-frame" aria-hidden="true"></div>
     <div class="tama-screen">
-      <div class="tama-welcome">DotPet<br/>♥ Press Start ♥</div>
+      <form class="lcd-form" id="lcd-splash-form" onsubmit="return false;">
+        <div class="lcd-title">DotPet</div>
+        <div id="continue-slot"></div>
+        <label for="pet-name-input" id="lbl-name">Pet name</label>
+        <input type="text" id="pet-name-input" maxlength="16" placeholder="e.g. Boto" autocomplete="off" aria-label="Your pet's name" />
+        <button class="lcd-btn" id="splash-start" type="button" aria-label="Start the game">▶ MEET YOUR PET</button>
+      </form>
     </div>
   </div>
-  <h1 id="splash-title">DotPet</h1>
   <p class="tagline" id="splash-tag">A tactile virtual pet you can raise with your Dot Pad — feed it, play with it, watch it grow.</p>
-  <div class="card">
-    <div id="continue-slot"></div>
-    <div class="card-title" id="card-title-fresh">Start a new pet</div>
-    <label for="pet-name-input" id="lbl-name">Your pet's name</label>
-    <input type="text" id="pet-name-input" maxlength="16" placeholder="e.g. Boto" autocomplete="off" />
-    <button class="start" id="splash-start" type="button" aria-label="Start the game">▶ Meet your pet</button>
-    <div class="footer">
-      <span id="splash-foot">Need keys for Azure neural voice? Open <a href="#" id="open-settings-link">Settings</a> after hatching.</span>
-    </div>
+  <div class="splash-tools">
+    <span id="splash-foot">Need keys for Azure neural voice? Open <a href="#" id="open-settings-link">Settings</a> after starting.</span>
   </div>
 </div>
 
@@ -1954,11 +2073,28 @@ function tamaFrameSvg() {
     <ellipse cx="150" cy="75" rx="55" ry="22" fill="#ffd0a9" opacity="0.7"/>
   </svg>`;
 }
+// Try loading tamagotchi.png first (user-provided original); if 404, fall back to SVG.
 function injectTamaFrames() {
-  const a = document.getElementById('splash-tama-frame');
-  const b = document.getElementById('main-tama-frame');
-  if (a && !a.innerHTML) a.innerHTML = tamaFrameSvg();
-  if (b && !b.innerHTML) b.innerHTML = tamaFrameSvg();
+  const slots = [
+    document.getElementById('splash-tama-frame'),
+    document.getElementById('main-tama-frame'),
+  ].filter(Boolean);
+  if (!slots.length) return;
+  const url = 'tamagotchi.png';
+  const probe = new Image();
+  probe.onload = () => {
+    slots.forEach(slot => {
+      if (slot.innerHTML) return;
+      slot.innerHTML = `<img src="${url}" alt="Tamagotchi device" decoding="async" />`;
+      const dev = slot.closest('.tama-device');
+      if (dev) dev.setAttribute('data-using-image', 'true');
+    });
+  };
+  probe.onerror = () => {
+    slots.forEach(slot => { if (!slot.innerHTML) slot.innerHTML = tamaFrameSvg(); });
+    console.log('[tama] using SVG fallback — drop tamagotchi.png into this folder to use the original image');
+  };
+  probe.src = url + '?t=' + Date.now();
 }
 
 // ============================================================
@@ -2449,12 +2585,18 @@ function applyI18n() {
   const t = T();
   document.documentElement.lang = state.lang === 'ko' ? 'ko' : 'en';
   document.title = t.pageTitle;
-  document.getElementById('splash-title').textContent = t.splashTitle;
-  document.getElementById('splash-tag').textContent = t.splashTag;
+  const splashTitleEl = document.getElementById('splash-title');
+  if (splashTitleEl) splashTitleEl.textContent = t.splashTitle;
+  const splashTagEl = document.getElementById('splash-tag');
+  if (splashTagEl) splashTagEl.textContent = t.splashTag;
+  // LCD title (inside Tama screen)
+  const lcdTitleEl = document.querySelector('#lcd-splash-form .lcd-title');
+  if (lcdTitleEl) lcdTitleEl.textContent = t.splashTitle;
   document.getElementById('lbl-name').textContent = t.lblName;
   document.getElementById('pet-name-input').placeholder = t.placeholderName;
-  document.getElementById('splash-start').textContent = t.btnStart;
-  document.getElementById('splash-foot').innerHTML = t.footHint;
+  document.getElementById('splash-start').textContent = (state.lang === 'ko' ? '▶ 펫 만나기' : '▶ MEET YOUR PET');
+  const footEl = document.getElementById('splash-foot');
+  if (footEl) footEl.innerHTML = t.footHint;
   document.getElementById('btn-connect').textContent = t.headerConnect;
   document.getElementById('btn-tts').textContent = t.voiceBtn;
   document.getElementById('btn-sfx').textContent = t.sfxBtn;
@@ -2484,7 +2626,6 @@ function applyI18n() {
   document.getElementById('speed-hint').textContent = t.speedHint;
   document.getElementById('stats-panel-title').textContent = t.statsTitle;
   document.getElementById('log-title').textContent = t.log;
-  document.getElementById('card-title-fresh').textContent = t.cardTitleFresh;
   document.getElementById('connect-title').textContent = t.headerConnect;
   document.getElementById('settings-title').textContent = t.settings;
   updateConnUi();
@@ -2501,21 +2642,20 @@ function refreshContinueSlot() {
       const mult = SPEED[state.speed].mult;
       const h = (real / 1000 / 3600) * mult;
       const evolve = SPEED[state.speed].evolveHoursFromHatch;
-      if (h < evolve.baby) return T().stageEgg;
-      if (h < evolve.child) return T().stageBaby;
-      if (h < evolve.adult) return T().stageChild;
-      return saved.adultType
-        ? T()['stageAdult' + (saved.adultType[0].toUpperCase() + saved.adultType.slice(1))]
-        : T().stageAdultNormal;
+      // Note: pets created in v0.2+ start at child stage and never downgrade.
+      const savedStage = saved.stage || (h < evolve.baby ? 'egg' : h < evolve.child ? 'baby' : h < evolve.adult ? 'child' : 'adult');
+      if (savedStage === 'adult' && saved.adultType) {
+        return T()['stageAdult' + (saved.adultType[0].toUpperCase() + saved.adultType.slice(1))];
+      }
+      return T()['stage' + savedStage[0].toUpperCase() + savedStage.slice(1)];
     })();
     slot.innerHTML = `
-      <div class="continue-card">
-        <div class="info">${T().cardTitleContinue}</div>
-        <div class="pet-name">${escapeHtml(saved.name)}</div>
-        <div class="stage">${stage}</div>
-        <div class="continue-row">
-          <button id="btn-resume" type="button">${T().btnContinue}</button>
-          <button id="btn-fresh" class="danger" type="button">${T().btnNewPet}</button>
+      <div class="lcd-continue">
+        <div class="nm">${escapeHtml(saved.name)}</div>
+        <div class="stg">${stage}</div>
+        <div class="lcd-continue-row">
+          <button class="cont" id="btn-resume" type="button">${T().btnContinue}</button>
+          <button class="fresh" id="btn-fresh" type="button">${T().btnNewPet}</button>
         </div>
       </div>
     `;
