@@ -2417,75 +2417,178 @@ const PET_DOT = {
   },
 };
 
+// Helper — convert Uint8Array (or array of bytes) to uppercase hex string.
+// SDK expects displayGraphicData to receive a hex string ("FFAABB..."), not a byte array.
+function bytesToHex(bytes) {
+  let out = '';
+  for (let i = 0; i < bytes.length; i++) {
+    out += bytes[i].toString(16).padStart(2, '0').toUpperCase();
+  }
+  return out;
+}
+
 function renderDotpad() {
   if (!state.dotpadConnected || !window.DotPad) return;
   try {
-    const cells = petDotPattern();
-    const { sdk, DisplayMode, DataCodes } = window.DotPad;
-    sdk.displayGraphicData(cells, DisplayMode.Graphic, DataCodes.DisplayDataPacket);
-    // Also send a brief text line with stage + mood
+    const cells = petDotPattern();              // Uint8Array(300) — 30×10
+    const hex = bytesToHex(cells);              // 600-char hex string
+    const { sdk } = window.DotPad;
+    sdk.displayGraphicData(hex);                // device=null → all connected
+    // Brief text line — pet name + stage (best-effort; some devices ignore text)
     if (state.pet) {
       const p = state.pet;
       const stage = computeStage();
-      const stageLbl = stage === 'adult' ? (T()['stageAdult' + (p.adultType[0].toUpperCase() + p.adultType.slice(1))]) : T()['stage' + stage[0].toUpperCase() + stage.slice(1)];
-      const line = `${p.name} ${stageLbl}`;
-      // Text rendering: send braille-encoded line via SDK (depends on SDK's text mode)
-      try { sdk.displayTextData(line, DataCodes.DisplayTextPacket); } catch(e){}
+      const stageLbl = stage === 'adult'
+        ? (T()['stageAdult' + (p.adultType[0].toUpperCase() + p.adultType.slice(1))])
+        : (T()['stage' + stage[0].toUpperCase() + stage.slice(1)]);
+      const textLine = `${p.name} - ${stageLbl}`;
+      try { sdk.displayTextData(textLine); } catch(e){ /* device may not support */ }
     }
   } catch(e) { console.warn('[dotpad] render failed:', e); }
 }
 
 // ============================================================
-// Dot Pad connection
+// Dot Pad connection — proper API flow:
+//   scanner.startBleScan() / startUsbScan()  → returns navigator device
+//   sdk.setCallBack(onMessage, onKey)        → register before connect
+//   sdk.connectBleDevice(device) / connectUsbDevice(port) → returns DotDevice
+// State.dotpadConnected is flipped by the SDK Connected/Disconnected callbacks,
+// NOT by the connect functions themselves (the SDK fires Connected when ready).
 // ============================================================
+function dotpadAvailable() { return !!window.DotPad && !!window.DotPad.sdk; }
+
 async function connectBle() {
-  if (!window.DotPad) {
-    showToast('Dot Pad SDK not loaded', 'danger');
-    return;
-  }
+  if (!dotpadAvailable()) { showToast('Dot Pad SDK not loaded', 'danger'); return; }
   try {
     document.getElementById('conn-text').textContent = T().connecting;
-    const device = await window.DotPad.sdk.connectBleDevice();
-    state.dotpadDevice = device;
-    state.dotpadConnected = true;
-    updateConnUi();
-    showToast(T().toastConnected, 'care');
-    SFX.happy();
+    window.DotPad.sdk.setCallBack(onDotpadMessage, onDotpadKey);
+    const device = await window.DotPad.scanner.startBleScan();
+    if (!device) {
+      document.getElementById('conn-text').textContent = T().disconnected;
+      return;
+    }
+    state.dotpadName = device.name || 'Dot Pad';
+    const dot = await window.DotPad.sdk.connectBleDevice(device);
+    if (!dot) throw new Error('connectBleDevice returned null');
+    state.dotpadDevice = dot;
+    // Note: state.dotpadConnected will be set true by onDotpadMessage(Connected)
     closeConnect();
-    setTimeout(renderDotpad, 200);
   } catch(e) {
     console.warn('[ble] failed:', e);
     document.getElementById('conn-text').textContent = T().disconnected;
     showToast('Connect failed: ' + (e.message || e), 'warn');
   }
 }
+
 async function connectUsb() {
-  if (!window.DotPad) { showToast('Dot Pad SDK not loaded', 'danger'); return; }
+  if (!dotpadAvailable()) { showToast('Dot Pad SDK not loaded', 'danger'); return; }
   try {
     document.getElementById('conn-text').textContent = T().connecting;
-    const device = await window.DotPad.sdk.connectUsbDevice();
-    state.dotpadDevice = device;
-    state.dotpadConnected = true;
-    updateConnUi();
-    showToast(T().toastConnected, 'care');
-    SFX.happy();
+    window.DotPad.sdk.setCallBack(onDotpadMessage, onDotpadKey);
+    const port = await window.DotPad.scanner.startUsbScan();
+    if (!port) {
+      document.getElementById('conn-text').textContent = T().disconnected;
+      return;
+    }
+    state.dotpadName = 'USB Dot Pad';
+    const dot = await window.DotPad.sdk.connectUsbDevice(port);
+    if (!dot) throw new Error('connectUsbDevice returned null');
+    state.dotpadDevice = dot;
     closeConnect();
-    setTimeout(renderDotpad, 200);
   } catch(e) {
     console.warn('[usb] failed:', e);
     document.getElementById('conn-text').textContent = T().disconnected;
     showToast('Connect failed: ' + (e.message || e), 'warn');
   }
 }
+
+function disconnectDotpad() {
+  if (!dotpadAvailable()) return;
+  try { window.DotPad.sdk.disconnect(state.dotpadDevice); } catch(e){}
+  state.dotpadConnected = false;
+  state.dotpadDevice = null;
+  state.dotpadName = '';
+  updateConnUi();
+}
+
+// SDK message callback — fired when device sends status (Connected/Disconnected/Name)
+function onDotpadMessage(device, code, msg) {
+  if (!window.DotPad) return;
+  const DC = window.DotPad.DataCodes;
+  if (code === DC.Connected) {
+    state.dotpadConnected = true;
+    state.dotpadDevice = device;
+    state.dotpadName = device.connectDevice?.name || state.dotpadName || 'Dot Pad';
+    updateConnUi();
+    showToast(T().toastConnected, 'care');
+    try { SFX.happy(); } catch(e){}
+    // Initial render once geometry is known
+    setTimeout(renderDotpad, 300);
+  } else if (code === DC.Disconnected) {
+    state.dotpadConnected = false;
+    state.dotpadDevice = null;
+    state.dotpadName = '';
+    updateConnUi();
+    showToast(T().toastDisconnected || 'Dot Pad disconnected', 'warn');
+  } else if (code === DC.DeviceName) {
+    state.dotpadName = msg || state.dotpadName;
+    updateConnUi();
+  }
+}
+
+// SDK key callback — physical buttons on the Dot Pad pressed.
+// Dispatches based on app stage so the device can drive the entire game.
+function onDotpadKey(device, keyCode, msg) {
+  if (!window.DotPad) return;
+  const KC = window.DotPad.KeyCodes;
+
+  // If a mini-game is open, route 1-4 to its handler
+  const mgOpen = document.getElementById('mg-overlay')?.classList.contains('open');
+  if (mgOpen && state.mg) {
+    const n = ({ [KC.KeyFunction1]:1, [KC.KeyFunction2]:2, [KC.KeyFunction3]:3, [KC.KeyFunction4]:4 })[keyCode];
+    if (n) {
+      if (state.mg.type === 'guess') guessNumber(n);
+      else if (state.mg.type === 'rhythm' && state.mg.step === 'input') rhythmInput(n);
+    }
+    return;
+  }
+
+  // If splash is showing and a pet is being created, F3 == start
+  const splashEl = document.getElementById('splash');
+  if (splashEl && !splashEl.classList.contains('hidden')) {
+    if (keyCode === KC.KeyFunction3) {
+      document.getElementById('splash-start')?.click();
+    }
+    return;
+  }
+
+  // Main game key mapping
+  switch (keyCode) {
+    case KC.KeyFunction1: actFeed();        break;   // F1 — feed
+    case KC.KeyFunction2: actPlay();        break;   // F2 — play
+    case KC.KeyFunction3: actClean();       break;   // F3 — clean
+    case KC.KeyFunction4: actSleep();       break;   // F4 — sleep / wake
+    case KC.KeyFunction12: actStatsCheck(); break;   // F1+F2 — announce stats
+    case KC.KeyFunction34: actInfo();       break;   // F3+F4 — pet info
+    case KC.KeyFunction14: actHelp();       break;   // F1+F4 — key map help
+    case KC.PanningAll:    actStatsCheck(); break;   // center pan — quick stat re-announce
+    case KC.PanningLeft:                              // left/right pan — repeat last narration
+    case KC.PanningRight:
+      if (state.lastSpeech) { try { saySpeech(state.lastSpeech); } catch(e){} }
+      break;
+    default: break;
+  }
+}
+
 function updateConnUi() {
   const dot = document.getElementById('conn-dot');
   const text = document.getElementById('conn-text');
   if (state.dotpadConnected) {
-    dot.classList.add('connected');
-    text.textContent = T().connected;
+    dot?.classList.add('connected');
+    if (text) text.textContent = T().connected + (state.dotpadName ? ` · ${state.dotpadName}` : '');
   } else {
-    dot.classList.remove('connected');
-    text.textContent = T().disconnected;
+    dot?.classList.remove('connected');
+    if (text) text.textContent = T().disconnected;
   }
 }
 function openConnect() { document.getElementById('connect-overlay').classList.add('open'); }
