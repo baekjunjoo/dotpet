@@ -142,7 +142,8 @@
     position: fixed; inset: 0; z-index: 150;
     background: linear-gradient(180deg, #fff8f3 0%, #ffeede 100%);
     display: flex; flex-direction: column; align-items: center; justify-content: center;
-    padding: 32px 20px;
+    padding: 8px;
+    overflow: hidden;
     transition: opacity .3s, visibility .3s;
   }
   .splash.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
@@ -224,10 +225,22 @@
     filter: drop-shadow(0 10px 24px rgba(15,20,30,.22));
   }
   .tama-device.tama-sm { max-width: 240px; margin-bottom: 16px; }
-  .tama-device.tama-lg { max-width: 520px; margin-bottom: 24px; }
-  @media (max-width: 600px) {
-    .tama-device.tama-lg { max-width: 360px; }
+  /* Splash device — viewport-driven so it fits without scrolling.
+     aspect 2201/2600 ≈ 0.847 → height should drive width.
+     Cap so it never exceeds viewport width either. */
+  .tama-device.tama-lg {
+    width: auto;
+    height: min(98vh, 820px);
+    max-width: min(96vw, 700px);
+    margin: 0 auto;
   }
+  @media (max-width: 600px) {
+    .tama-device.tama-lg { height: min(96vh, 680px); max-width: 96vw; }
+  }
+  /* Hide splash tagline + footer — copy lives inside the LCD form, and Settings
+     is reachable via the gear button after starting. Keeps everything above the fold. */
+  .splash .tagline,
+  .splash .splash-tools { display: none !important; }
   .tama-frame {
     position: absolute;
     inset: 0;
@@ -326,6 +339,16 @@
     outline: 2px solid #ffd84a;
     outline-offset: 0;
     background: rgba(245,233,212,0.16);
+  }
+  /* Override Chrome's white autofill background so input stays LCD-dark */
+  .lcd-form input:-webkit-autofill,
+  .lcd-form input:-webkit-autofill:hover,
+  .lcd-form input:-webkit-autofill:focus,
+  .lcd-form input:-webkit-autofill:active {
+    -webkit-box-shadow: 0 0 0 30px #0a1020 inset !important;
+    -webkit-text-fill-color: #f5e9d4 !important;
+    caret-color: #f5e9d4;
+    transition: background-color 9999s ease-in-out 0s;
   }
   .lcd-form .lcd-btn {
     width: 100%;
