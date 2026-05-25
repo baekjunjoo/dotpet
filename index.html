@@ -218,13 +218,22 @@
   .tama-device {
     position: relative;
     width: 100%;
-    max-width: 320px;
+    max-width: 480px;
     /* aspect matches reference image 2201:2600 ≈ 0.847 */
     aspect-ratio: 2201/2600;
     margin: 0 auto 20px;
     filter: drop-shadow(0 10px 24px rgba(15,20,30,.22));
   }
   .tama-device.tama-sm { max-width: 240px; margin-bottom: 16px; }
+  /* Override screen rect for main game — tighter to actual dark area in PNG
+     so the pet doesn't visually overflow the screen. */
+  .pet-stage-vis .tama-screen {
+    top: 26%;
+    height: 37%;
+  }
+  .pet-stage-vis .pet-svg-wrap {
+    width: 78%; height: 78%;
+  }
   /* Splash device — viewport-driven so it fits without scrolling.
      aspect 2201/2600 ≈ 0.847 → height should drive width.
      Cap so it never exceeds viewport width either. */
@@ -407,20 +416,34 @@
   }
   .tama-screen .pet-svg-wrap svg { animation: petBreathe 2.4s ease-in-out infinite; }
 
-  /* Tama device interactive (when buttons can be pressed via key map) */
+  /* Tama device interactive — F1-F4 chips that sit centered inside the yellow
+     buttons of the PNG device. Anchored by (left, top) at the visual center
+     of each button; transform centers the chip on that anchor. */
   .tama-btn-hint {
     position: absolute;
-    font-size: 10px;
-    font-weight: 700;
-    color: rgba(255,255,255,0.9);
-    text-shadow: 0 1px 2px rgba(0,0,0,0.4);
+    width: 9%;
+    aspect-ratio: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: clamp(11px, 2.1vw, 18px);
+    font-weight: 900;
+    color: var(--accent);
+    text-shadow:
+      0 0 4px rgba(255,255,255,0.95),
+      0 0 2px rgba(255,255,255,0.95),
+      0 1px 1px rgba(0,0,0,0.18);
     pointer-events: none;
-    text-align: center;
+    letter-spacing: -0.02em;
+    transform: translate(-50%, -50%);
+    line-height: 1;
   }
-  .tama-btn-hint.b1 { left: 31%; bottom: 17%; }
-  .tama-btn-hint.b2 { left: 42%; bottom: 11%; }
-  .tama-btn-hint.b3 { left: 53%; bottom: 11%; }
-  .tama-btn-hint.b4 { left: 64%; bottom: 17%; }
+  /* Button centers in the reference PNG (top % from top of device). The two
+     middle buttons sit slightly lower than the outer two (downward arc). */
+  .tama-btn-hint.b1 { left: 33%; top: 85%; }
+  .tama-btn-hint.b2 { left: 44%; top: 88%; }
+  .tama-btn-hint.b3 { left: 56%; top: 88%; }
+  .tama-btn-hint.b4 { left: 67%; top: 85%; }
 
   /* Continue with existing pet card */
   .continue-card {
@@ -495,7 +518,7 @@
     border-radius: var(--radius);
     padding: 16px 0 0;
     display: flex; align-items: center; justify-content: center;
-    min-height: 220px;
+    min-height: 320px;
     margin-bottom: 20px;
   }
   .pet-stage-vis .tama-device { margin-bottom: 0; }
