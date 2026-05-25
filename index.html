@@ -232,7 +232,7 @@
     height: 37%;
   }
   .pet-stage-vis .pet-svg-wrap {
-    width: 78%; height: 78%;
+    width: 62%; height: 62%;
   }
   /* Splash device — viewport-driven so it fits without scrolling.
      aspect 2201/2600 ≈ 0.847 → height should drive width.
@@ -440,10 +440,32 @@
   }
   /* Button centers in the reference PNG (top % from top of device). The two
      middle buttons sit slightly lower than the outer two (downward arc). */
-  .tama-btn-hint.b1 { left: 33%; top: 85%; }
-  .tama-btn-hint.b2 { left: 44%; top: 88%; }
-  .tama-btn-hint.b3 { left: 56%; top: 88%; }
-  .tama-btn-hint.b4 { left: 67%; top: 85%; }
+  .tama-btn-hint.b1 { left: 33%; top: 90%; }
+  .tama-btn-hint.b2 { left: 44%; top: 93%; }
+  .tama-btn-hint.b3 { left: 56%; top: 93%; }
+  .tama-btn-hint.b4 { left: 67%; top: 90%; }
+
+  /* Side pan-key arrows (white) — sit centered inside the orange oval keys
+     on the left and right edges of the device. */
+  .tama-pan-hint {
+    position: absolute;
+    width: 8%;
+    aspect-ratio: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: clamp(14px, 2.6vw, 22px);
+    font-weight: 900;
+    color: #ffffff;
+    text-shadow:
+      0 1px 2px rgba(0,0,0,0.35),
+      0 0 4px rgba(0,0,0,0.18);
+    pointer-events: none;
+    line-height: 1;
+    transform: translate(-50%, -50%);
+  }
+  .tama-pan-hint.pl { left: 16%; top: 73%; }
+  .tama-pan-hint.pr { left: 84%; top: 73%; }
 
   /* Continue with existing pet card */
   .continue-card {
@@ -975,6 +997,8 @@
         <div class="tama-btn-hint b2" aria-hidden="true">F2</div>
         <div class="tama-btn-hint b3" aria-hidden="true">F3</div>
         <div class="tama-btn-hint b4" aria-hidden="true">F4</div>
+        <div class="tama-pan-hint pl" aria-hidden="true">◀</div>
+        <div class="tama-pan-hint pr" aria-hidden="true">▶</div>
       </div>
     </div>
     <div class="pet-speech" role="region" aria-labelledby="speech-label" aria-live="polite">
