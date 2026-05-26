@@ -232,7 +232,15 @@
     height: 37%;
   }
   .pet-stage-vis .pet-svg-wrap {
-    width: 62%; height: 62%;
+    width: 92%; height: 92%;
+  }
+  /* The Dot Pad mirror SVG has natural aspect 3:1 (30 cells × 10 rows).
+     object-fit: contain will fit it inside the screen, leaving black
+     letterbox above/below — so the pet visual matches the real device. */
+  .pet-stage-vis .pet-svg-wrap svg {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
   }
   /* Splash device — viewport-driven so it fits without scrolling.
      aspect 2201/2600 ≈ 0.847 → height should drive width.
@@ -993,12 +1001,6 @@
         <div class="tama-screen">
           <div class="pet-svg-wrap" id="pet-svg-wrap"></div>
         </div>
-        <div class="tama-btn-hint b1" aria-hidden="true">F1</div>
-        <div class="tama-btn-hint b2" aria-hidden="true">F2</div>
-        <div class="tama-btn-hint b3" aria-hidden="true">F3</div>
-        <div class="tama-btn-hint b4" aria-hidden="true">F4</div>
-        <div class="tama-pan-hint pl" aria-hidden="true">◀</div>
-        <div class="tama-pan-hint pr" aria-hidden="true">▶</div>
       </div>
     </div>
     <div class="pet-speech" role="region" aria-labelledby="speech-label" aria-live="polite">
@@ -2170,17 +2172,51 @@ function injectTamaFrames() {
 // ============================================================
 // SVG pet visualization (rendered inside Tama screen — LCD color theme)
 // ============================================================
+// On-screen pet visualization renders the EXACT same 30×10 dot pattern that
+// is sent to the Dot Pad — so what users see on screen matches the tactile
+// braille output cell-for-cell. Each cell shows its 8 dots in a 2-col × 4-row
+// micro-grid (standard 8-dot braille layout): col 0 has dots 1,2,3,7 and col 1
+// has dots 4,5,6,8.
 function renderPetSvg() {
   const wrap = document.getElementById('pet-svg-wrap');
   if (!wrap) return;
-  const p = state.pet;
-  const stage = computeStage();
-  const mood = p.asleep ? 'sleep' : p.sickSince ? 'sick' :
-    (p.stats.happy >= 70 && p.stats.love >= 60) ? 'happy' :
-    (p.stats.happy < 30 || p.stats.hunger < 25) ? 'sad' : 'idle';
-  wrap.innerHTML = SVG_STAGES[stage]
-    ? SVG_STAGES[stage](mood, p.adultType)
-    : SVG_STAGES.child(mood);
+  if (!state.pet) { wrap.innerHTML = ''; return; }
+
+  const cells = petDotPattern();         // Uint8Array(300) — 30 cols × 10 rows
+  const W = 30, H = 10;
+  const CELL = 12;                       // px per cell in viewBox
+  const DOT_COLS = 2, DOT_ROWS = 4;
+  const dW = CELL / DOT_COLS;            // 6
+  const dH = CELL / DOT_ROWS;            // 3
+  const PAD = 0.8;                       // dot inset within sub-cell
+  // Bit-to-(col,row) map for 8-dot braille
+  const BIT_POS = [
+    [0, 0],  // bit 0 / dot 1
+    [0, 1],  // bit 1 / dot 2
+    [0, 2],  // bit 2 / dot 3
+    [1, 0],  // bit 3 / dot 4
+    [1, 1],  // bit 4 / dot 5
+    [1, 2],  // bit 5 / dot 6
+    [0, 3],  // bit 6 / dot 7
+    [1, 3],  // bit 7 / dot 8
+  ];
+  const dotRadius = (Math.min(dW, dH) - PAD * 2) / 2;
+  let svg = `<svg viewBox="0 0 ${W * CELL} ${H * CELL}" xmlns="http://www.w3.org/2000/svg" shape-rendering="geometricPrecision" aria-hidden="true">`;
+  for (let r = 0; r < H; r++) {
+    for (let c = 0; c < W; c++) {
+      const mask = cells[r * W + c];
+      if (!mask) continue;
+      for (let b = 0; b < 8; b++) {
+        if (!(mask & (1 << b))) continue;
+        const [dc, dr] = BIT_POS[b];
+        const cx = c * CELL + dc * dW + dW / 2;
+        const cy = r * CELL + dr * dH + dH / 2;
+        svg += `<circle cx="${cx.toFixed(2)}" cy="${cy.toFixed(2)}" r="${dotRadius.toFixed(2)}" fill="${LCD.body}"/>`;
+      }
+    }
+  }
+  svg += `</svg>`;
+  wrap.innerHTML = svg;
 }
 
 // Pet stage SVG — pixel-style LCD inside dark Tama screen
