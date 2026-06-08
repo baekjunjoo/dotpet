@@ -1519,6 +1519,9 @@ const state = {
   log: [],
   lastSpeech: '',
   mg: null,            // active minigame state
+  dpAction: null,      // transient action overlay on Dot Pad: 'feed'|'play'|'clean'|'sleep'
+  dpActionUntil: 0,    // timestamp when dpAction expires
+  dpName: '',          // last known Dot Pad device name
 };
 
 function loadSettings() {
@@ -1840,6 +1843,7 @@ function actFeed() {
   logEntry(T().logFeed);
   saySpeech(msg, { npc: true });
   savePet(); renderAll();
+  triggerDpAction('feed', 1500);
 }
 function actPlay() {
   if (!state.pet) return;
@@ -1861,6 +1865,7 @@ function actPlay() {
     logEntry(T().logPlay);
     saySpeech(T().speechPlay(p.name), { npc: true });
     savePet(); renderAll();
+    triggerDpAction('play', 1500);
   } else {
     // Start a minigame
     startMinigame();
@@ -1882,6 +1887,7 @@ function actClean() {
   logEntry(T().logClean);
   saySpeech(resist ? T().speechCleanResist(p.name) : T().speechCleanOk(p.name), { npc: true });
   savePet(); renderAll();
+  triggerDpAction('clean', 1500);
 }
 function actSleep() {
   if (!state.pet) return;
@@ -1895,14 +1901,17 @@ function actSleep() {
     logEntry(T().logWake);
     saySpeech(T().speechWakeUp(p.name), { npc: true });
     recordAction(0);
+    savePet(); renderAll();
+    triggerDpAction('play', 1200);
   } else {
     p.asleep = true;
     SFX.sleep();
     logEntry(T().logSleep);
     saySpeech(T().speechSleepStart(p.name), { npc: true });
     recordAction(p.stats.energy < 40 ? 2 : 1);
+    savePet(); renderAll();
+    triggerDpAction('sleep', 1800);
   }
-  savePet(); renderAll();
 }
 function actStatsCheck() {
   if (!state.pet) return;
@@ -2325,161 +2334,361 @@ const SVG_STAGES = {
 };
 
 // ============================================================
-// Dot Pad rendering — pet centered on 300 cells (30×10)
+// Dot Pad rendering — 60×40 pin canvas (30×10 cells, 8-dot braille)
+// v0.9: large pet portrait + HUD bars + action overlays + minigame mirror
 // ============================================================
-const DP_W = 30, DP_H = 10;
-function petDotPattern() {
-  // Returns 30×10 cells array (Uint8Array), each cell 8-bit dot mask
+const DP_W = 30, DP_H = 10;                  // cell grid (each cell = 2 pins wide × 4 pins tall)
+const DP_PINS_W = 60, DP_PINS_H = 40;        // pin grid
+
+// ----- pin-level helpers (8-dot braille packing) -----
+function setPin(cells, x, y, on = true) {
+  if (x < 0 || x >= DP_PINS_W || y < 0 || y >= DP_PINS_H) return;
+  const cellCol = x >> 1;
+  const cellRow = y >> 2;
+  const subX = x & 1;
+  const subY = y & 3;
+  // Left column (subX=0): dots 1,2,3,7 → bits 0,1,2,6.
+  // Right column (subX=1): dots 4,5,6,8 → bits 3,4,5,7.
+  const bit = (subX === 0) ? [0, 1, 2, 6][subY] : [3, 4, 5, 7][subY];
+  const idx = cellRow * DP_W + cellCol;
+  if (on) cells[idx] |= (1 << bit);
+  else cells[idx] &= ~(1 << bit);
+}
+function fillRect(cells, x0, y0, w, h, on = true) {
+  for (let dy = 0; dy < h; dy++) for (let dx = 0; dx < w; dx++) setPin(cells, x0 + dx, y0 + dy, on);
+}
+function strokeRect(cells, x0, y0, w, h) {
+  for (let dx = 0; dx < w; dx++) { setPin(cells, x0 + dx, y0); setPin(cells, x0 + dx, y0 + h - 1); }
+  for (let dy = 0; dy < h; dy++) { setPin(cells, x0, y0 + dy); setPin(cells, x0 + w - 1, y0 + dy); }
+}
+function drawHLine(cells, x0, y, w) { for (let i = 0; i < w; i++) setPin(cells, x0 + i, y); }
+function drawVLine(cells, x, y0, h) { for (let i = 0; i < h; i++) setPin(cells, x, y0 + i); }
+function drawOval(cells, cx, cy, rx, ry, filled = true) {
+  // Approximate ellipse via implicit test
+  for (let y = -ry; y <= ry; y++) {
+    for (let x = -rx; x <= rx; x++) {
+      const d = (x*x) / (rx*rx) + (y*y) / (ry*ry);
+      if (filled ? d <= 1.05 : (d <= 1.1 && d >= 0.6)) setPin(cells, cx + x, cy + y);
+    }
+  }
+}
+// 7-seg digit (w × h pins). Used for minigame number cards.
+function drawDigit(cells, d, x0, y0, w, h) {
+  const segs = {
+    top:    { x: x0, y: y0, dir: 'h', len: w },
+    middle: { x: x0, y: y0 + Math.floor(h/2), dir: 'h', len: w },
+    bottom: { x: x0, y: y0 + h - 1, dir: 'h', len: w },
+    ul:     { x: x0, y: y0, dir: 'v', len: Math.floor(h/2) + 1 },
+    ur:     { x: x0 + w - 1, y: y0, dir: 'v', len: Math.floor(h/2) + 1 },
+    ll:     { x: x0, y: y0 + Math.floor(h/2), dir: 'v', len: h - Math.floor(h/2) },
+    lr:     { x: x0 + w - 1, y: y0 + Math.floor(h/2), dir: 'v', len: h - Math.floor(h/2) },
+  };
+  const map = {
+    0: ['top','ul','ur','ll','lr','bottom'], 1: ['ur','lr'],
+    2: ['top','ur','middle','ll','bottom'],  3: ['top','ur','middle','lr','bottom'],
+    4: ['ul','ur','middle','lr'],            5: ['top','ul','middle','lr','bottom'],
+    6: ['top','ul','middle','ll','lr','bottom'], 7: ['top','ur','lr'],
+    8: ['top','ul','ur','middle','ll','lr','bottom'], 9: ['top','ul','ur','middle','lr','bottom'],
+  };
+  for (const name of (map[d] || [])) {
+    const s = segs[name];
+    if (s.dir === 'h') drawHLine(cells, s.x, s.y, s.len);
+    else drawVLine(cells, s.x, s.y, s.len);
+  }
+}
+
+// ----- HUD: stat bars on top/bottom/left edges -----
+function drawHud(cells, p) {
+  if (!p) return;
+  // Top row (rows 0-1): hunger (cols 2-27) + happy (cols 32-57)
+  const barH = (val, x0, w, y) => {
+    const filled = Math.round((val / 100) * (w - 2));
+    drawHLine(cells, x0, y, w);             // outline top
+    setPin(cells, x0, y + 1); setPin(cells, x0 + w - 1, y + 1);
+    for (let i = 0; i < filled; i++) setPin(cells, x0 + 1 + i, y + 1);
+  };
+  barH(p.stats.hunger, 2, 26, 0);
+  barH(p.stats.happy,  32, 26, 0);
+  // Bottom row (rows 38-39): clean (left) + energy (right)
+  const barB = (val, x0, w, y) => {
+    const filled = Math.round((val / 100) * (w - 2));
+    drawHLine(cells, x0, y + 1, w);         // outline bottom
+    setPin(cells, x0, y); setPin(cells, x0 + w - 1, y);
+    for (let i = 0; i < filled; i++) setPin(cells, x0 + 1 + i, y);
+  };
+  barB(p.stats.clean,  2, 26, 38);
+  barB(p.stats.energy, 32, 26, 38);
+  // Left column: love vertical bar (rows 8-31, col 0)
+  const loveTotal = 24;
+  const loveFilled = Math.round((p.stats.love / 100) * loveTotal);
+  drawVLine(cells, 0, 8, loveTotal);
+  for (let i = 0; i < loveFilled; i++) setPin(cells, 1, 31 - i);
+  // Sick / sleeping indicator on right column (rows 8-31, col 59)
+  if (p.sickSince) {
+    // Cross pattern: 3 short dashes
+    for (const yy of [12, 18, 24, 30]) { setPin(cells, 58, yy); setPin(cells, 59, yy); setPin(cells, 58, yy + 1); }
+  } else if (p.asleep) {
+    // Zzz: 3 small Z's vertical
+    for (const yy of [10, 18, 26]) {
+      drawHLine(cells, 56, yy, 4);
+      drawHLine(cells, 56, yy + 3, 4);
+      setPin(cells, 59, yy + 1); setPin(cells, 57, yy + 2);
+    }
+  }
+}
+
+// ----- Pet portrait — drawn procedurally based on stage + mood -----
+function getMoodKey(p) {
+  if (!p) return 'neutral';
+  const lows = ['hunger','happy','clean','energy'].filter(s => p.stats[s] < 30);
+  if (lows.length >= 2) return 'sad';
+  if (p.stats.happy >= 70 && p.stats.love >= 60) return 'happy';
+  if (p.stats.happy < 35) return 'sad';
+  return 'neutral';
+}
+function drawMouth(cells, cx, cy, mood, sleeping) {
+  if (sleeping) {
+    drawOval(cells, cx, cy, 2, 1, false);
+    return;
+  }
+  if (mood === 'happy') {
+    drawHLine(cells, cx - 4, cy, 9);
+    setPin(cells, cx - 5, cy - 1);
+    setPin(cells, cx + 5, cy - 1);
+  } else if (mood === 'sad') {
+    drawHLine(cells, cx - 4, cy + 1, 9);
+    setPin(cells, cx - 5, cy);
+    setPin(cells, cx + 5, cy);
+  } else {
+    drawHLine(cells, cx - 3, cy, 7);
+  }
+}
+function drawEye(cells, cx, cy, sleeping) {
+  if (sleeping) { drawHLine(cells, cx - 2, cy, 5); return; }
+  // Clear a 5×5 hole around eye, then put a 2-pin pupil in center.
+  for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) setPin(cells, cx + dx, cy + dy, false);
+  setPin(cells, cx, cy);
+  setPin(cells, cx + 1, cy);
+  setPin(cells, cx, cy + 1);
+  setPin(cells, cx + 1, cy + 1);
+}
+
+function drawPet(cells, stage, sleeping, mood) {
+  // Main area: pins x ∈ [3..56], y ∈ [4..36]. Center pet around (30, 21).
+  const cx = 30, cy = 21;
+  if (stage === 'egg') {
+    drawOval(cells, cx, cy, 14, 16, true);
+    // Crack zigzag at top
+    drawHLine(cells, cx - 6, cy - 13, 12);
+    setPin(cells, cx - 5, cy - 14); setPin(cells, cx - 2, cy - 14);
+    setPin(cells, cx + 1, cy - 14); setPin(cells, cx + 4, cy - 14);
+    return;
+  }
+  if (stage === 'baby') {
+    // Round body
+    drawOval(cells, cx, cy + 1, 15, 14, true);
+    // Tiny antenna/tuft on top
+    setPin(cells, cx, cy - 14); setPin(cells, cx, cy - 13); setPin(cells, cx, cy - 12);
+    setPin(cells, cx - 1, cy - 12); setPin(cells, cx + 1, cy - 12);
+    drawEye(cells, cx - 6, cy - 2, sleeping);
+    drawEye(cells, cx + 6, cy - 2, sleeping);
+    drawMouth(cells, cx, cy + 6, mood, sleeping);
+    return;
+  }
+  if (stage === 'child') {
+    // Two ears
+    drawOval(cells, cx - 12, cy - 10, 4, 5, true);
+    drawOval(cells, cx + 12, cy - 10, 4, 5, true);
+    drawOval(cells, cx, cy + 2, 17, 14, true);
+    drawEye(cells, cx - 7, cy - 2, sleeping);
+    drawEye(cells, cx + 7, cy - 2, sleeping);
+    drawMouth(cells, cx, cy + 6, mood, sleeping);
+    // Tiny feet
+    drawHLine(cells, cx - 8, cy + 15, 4);
+    drawHLine(cells, cx + 4, cy + 15, 4);
+    return;
+  }
+  if (stage === 'adult') {
+    // Large ears
+    drawOval(cells, cx - 14, cy - 12, 5, 6, true);
+    drawOval(cells, cx + 14, cy - 12, 5, 6, true);
+    // Body
+    drawOval(cells, cx, cy + 2, 19, 15, true);
+    drawEye(cells, cx - 8, cy - 3, sleeping);
+    drawEye(cells, cx + 8, cy - 3, sleeping);
+    drawMouth(cells, cx, cy + 6, mood, sleeping);
+    // Tail
+    drawHLine(cells, cx + 17, cy + 7, 5);
+    setPin(cells, cx + 21, cy + 6); setPin(cells, cx + 21, cy + 8);
+    // Feet
+    drawHLine(cells, cx - 9, cy + 16, 5);
+    drawHLine(cells, cx + 5, cy + 16, 5);
+    return;
+  }
+}
+
+// ----- Action overlay sprites (transient, ~1.5s) -----
+function actionDotPattern(action) {
   const cells = new Uint8Array(DP_W * DP_H);
   if (!state.pet) return cells;
+  drawHud(cells, state.pet);
   const stage = computeStage();
-  const p = state.pet;
-  const sleeping = p.asleep;
-  // Stats bars at edges
-  // Top edge (row 0): hunger bar (cols 0-14), happiness bar (cols 15-29) — using dot 1+4 (top row)
-  const barTop = (val, startCol, len) => {
-    const filled = Math.round((val / 100) * len);
-    for (let i = 0; i < len; i++) {
-      const c = startCol + i;
-      if (c < 0 || c >= DP_W) continue;
-      if (i < filled) cells[0 * DP_W + c] |= 0x09; // dots 1+4 — visible top
+  switch (action) {
+    case 'feed': {
+      // Pet shifted left, bowl on right
+      const cx = 20, cy = 21;
+      drawOval(cells, cx, cy + 2, 11, 11, true);
+      drawEye(cells, cx - 4, cy - 1, false);
+      drawEye(cells, cx + 4, cy - 1, false);
+      drawMouth(cells, cx, cy + 5, 'happy', false);
+      // Bowl on right
+      const bx = 46, by = 28;
+      drawHLine(cells, bx - 7, by, 15);
+      for (let i = 1; i <= 5; i++) {
+        setPin(cells, bx - 7 + i, by + i);
+        setPin(cells, bx + 7 - i, by + i);
+      }
+      drawHLine(cells, bx - 2, by + 6, 5);
+      // Food pile on top of bowl
+      drawOval(cells, bx, by - 3, 5, 3, true);
+      setPin(cells, bx, by - 6); setPin(cells, bx - 2, by - 5); setPin(cells, bx + 2, by - 5);
+      break;
     }
-  };
-  barTop(p.stats.hunger, 0, 14);
-  barTop(p.stats.happy, 16, 14);
-  // Bottom edge (row 9): clean bar (cols 0-14), energy bar (cols 15-29) — using dots 7+8
-  const barBot = (val, startCol, len) => {
-    const filled = Math.round((val / 100) * len);
-    for (let i = 0; i < len; i++) {
-      const c = startCol + i;
-      if (c < 0 || c >= DP_W) continue;
-      if (i < filled) cells[9 * DP_W + c] |= 0xC0; // dots 7+8 — visible bottom
+    case 'play': {
+      drawPet(cells, stage, false, 'happy');
+      // Ball bouncing
+      drawOval(cells, 10, 14, 3, 3, false);
+      drawOval(cells, 50, 10, 3, 3, true);
+      // Sparkles
+      for (const [x, y] of [[8, 8], [52, 18], [12, 30], [50, 32]]) {
+        setPin(cells, x, y);
+        setPin(cells, x + 2, y);
+        setPin(cells, x - 2, y);
+        setPin(cells, x, y - 2);
+        setPin(cells, x, y + 2);
+      }
+      break;
     }
-  };
-  barBot(p.stats.clean, 0, 14);
-  barBot(p.stats.energy, 16, 14);
-  // Pet centered — choose pattern by stage
-  const pattern = sleeping ? PET_DOT.sleep[stage] : PET_DOT[stage] || PET_DOT.egg;
-  // Center pattern in cells: pattern is a 2D array of dot masks for cells.
-  const pH = pattern.length, pW = pattern[0].length;
-  const ox = Math.floor((DP_W - pW) / 2);
-  const oy = Math.floor((DP_H - pH) / 2);
-  for (let r = 0; r < pH; r++) {
-    for (let c = 0; c < pW; c++) {
-      const dr = oy + r, dc = ox + c;
-      if (dr < 0 || dr >= DP_H || dc < 0 || dc >= DP_W) continue;
-      const v = pattern[r][c];
-      if (v) cells[dr * DP_W + dc] |= v;
+    case 'clean': {
+      drawPet(cells, stage, false, 'neutral');
+      // Bubbles
+      for (const [x, y, r] of [[7, 12, 2], [53, 10, 3], [9, 24, 3], [54, 26, 2], [12, 8, 1], [50, 32, 2], [6, 30, 2]]) {
+        drawOval(cells, x, y, r, r, false);
+      }
+      break;
+    }
+    case 'sleep': {
+      drawPet(cells, stage, true, 'neutral');
+      // Big Zzz cluster top-right
+      const xs = [38, 44, 50];
+      const ys = [4, 8, 12];
+      for (let i = 0; i < 3; i++) {
+        const x = xs[i], y = ys[i];
+        drawHLine(cells, x, y, 5);
+        drawHLine(cells, x, y + 3, 5);
+        setPin(cells, x + 3, y + 1); setPin(cells, x + 1, y + 2);
+      }
+      break;
     }
   }
   return cells;
 }
 
-// PET_DOT — each entry is a 2D array of 8-dot braille cell masks
-// dot bits: 1=0x01 (TL), 2=0x02 (CL), 3=0x04 (BL), 4=0x08 (TR), 5=0x10 (CR), 6=0x20 (BR), 7=0x40 (BL extra), 8=0x80 (BR extra)
-// 0xFF = full 8-dot cell
-const PET_DOT = {
-  egg: [
-    [0x00, 0x18, 0x3F, 0x3F, 0x24, 0x00],
-    [0x00, 0x3F, 0x00, 0x00, 0x3F, 0x00],
-    [0x3F, 0x00, 0x00, 0x00, 0x00, 0x3F],
-    [0x3F, 0x00, 0x00, 0x00, 0x00, 0x3F],
-    [0x00, 0x3F, 0x00, 0x00, 0x3F, 0x00],
-    [0x00, 0x18, 0x3F, 0x3F, 0x24, 0x00],
-  ],
-  baby: [
-    [0x00, 0x18, 0x3F, 0x3F, 0x24, 0x00],
-    [0x00, 0xFF, 0x40, 0x40, 0xFF, 0x00],  // body + tiny eyes (40 = dot 7)
-    [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF],
-    [0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F],
-    [0x00, 0x18, 0x00, 0x00, 0x18, 0x00],  // feet
-  ],
-  child: [
-    [0x00, 0x00, 0x3F, 0x3F, 0x00, 0x00],   // head top
-    [0x00, 0x3F, 0xFF, 0xFF, 0x3F, 0x00],
-    [0x3F, 0xFF, 0x09, 0x09, 0xFF, 0x3F],   // eyes (dot 1+4)
-    [0x3F, 0xFF, 0xFF, 0xFF, 0xFF, 0x3F],   // mouth area
-    [0x3F, 0xFF, 0xFF, 0xFF, 0xFF, 0x3F],
-    [0x00, 0x3F, 0x3F, 0x3F, 0x3F, 0x00],   // body taper
-    [0x00, 0x00, 0x18, 0x18, 0x00, 0x00],   // feet
-  ],
-  adult: [
-    [0x00, 0x00, 0x3F, 0x3F, 0x3F, 0x00, 0x00],
-    [0x00, 0x3F, 0xFF, 0xFF, 0xFF, 0x3F, 0x00],
-    [0x3F, 0xFF, 0x09, 0xFF, 0x09, 0xFF, 0x3F],
-    [0x3F, 0xFF, 0xFF, 0x24, 0xFF, 0xFF, 0x3F],  // mouth dot
-    [0x3F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x3F],
-    [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF],
-    [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF],
-    [0x00, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x00],
-    [0x00, 0x00, 0x18, 0x00, 0x18, 0x00, 0x00],
-  ],
-  sleep: {
-    egg: [
-      [0x00, 0x18, 0x3F, 0x3F, 0x24, 0x00],
-      [0x00, 0x3F, 0x00, 0x00, 0x3F, 0x00],
-      [0x3F, 0x00, 0x00, 0x00, 0x00, 0x3F],
-      [0x3F, 0x00, 0x00, 0x00, 0x00, 0x3F],
-      [0x00, 0x3F, 0x00, 0x00, 0x3F, 0x00],
-      [0x00, 0x18, 0x3F, 0x3F, 0x24, 0x00],
-    ],
-    baby: [
-      [0x00, 0x18, 0x3F, 0x3F, 0x24, 0x00],
-      [0x00, 0xFF, 0x12, 0x12, 0xFF, 0x00],  // closed eyes (dot 2+5)
-      [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF],
-      [0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F],
-      [0x00, 0x18, 0x00, 0x00, 0x18, 0x00],
-    ],
-    child: [
-      [0x00, 0x00, 0x3F, 0x3F, 0x00, 0x00],
-      [0x00, 0x3F, 0xFF, 0xFF, 0x3F, 0x00],
-      [0x3F, 0xFF, 0x12, 0x12, 0xFF, 0x3F],
-      [0x3F, 0xFF, 0xFF, 0xFF, 0xFF, 0x3F],
-      [0x3F, 0xFF, 0xFF, 0xFF, 0xFF, 0x3F],
-      [0x00, 0x3F, 0x3F, 0x3F, 0x3F, 0x00],
-      [0x00, 0x00, 0x18, 0x18, 0x00, 0x00],
-    ],
-    adult: [
-      [0x00, 0x00, 0x3F, 0x3F, 0x3F, 0x00, 0x00],
-      [0x00, 0x3F, 0xFF, 0xFF, 0xFF, 0x3F, 0x00],
-      [0x3F, 0xFF, 0x12, 0xFF, 0x12, 0xFF, 0x3F],
-      [0x3F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x3F],
-      [0x3F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x3F],
-      [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF],
-      [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF],
-      [0x00, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x00],
-      [0x00, 0x00, 0x18, 0x00, 0x18, 0x00, 0x00],
-    ],
-  },
-};
+// ----- Minigame mirror (4-quadrant pad layout) -----
+function minigameDotPattern() {
+  const cells = new Uint8Array(DP_W * DP_H);
+  if (!state.pet || !state.mg) return cells;
+  drawHud(cells, state.pet);
+  const mg = state.mg;
+  // 4 quadrants: TL=1, TR=2, BL=3, BR=4 (matches minigame button labels)
+  const quads = [
+    { x: 6,  y: 6,  w: 22, h: 12, label: 1 },
+    { x: 32, y: 6,  w: 22, h: 12, label: 2 },
+    { x: 6,  y: 22, w: 22, h: 12, label: 3 },
+    { x: 32, y: 22, w: 22, h: 12, label: 4 },
+  ];
+  for (const q of quads) {
+    const active = (mg.activePad === q.label);
+    if (active) {
+      fillRect(cells, q.x, q.y, q.w, q.h);
+    } else {
+      strokeRect(cells, q.x, q.y, q.w, q.h);
+      // Digit centered inside
+      drawDigit(cells, q.label, q.x + Math.floor(q.w/2) - 3, q.y + Math.floor(q.h/2) - 4, 5, 8);
+    }
+  }
+  // Result icon in center (overlays the cross)
+  if (mg.result === 'correct') {
+    // Big check mark from (24,18) to (30,24) up to (38,12)
+    for (let i = 0; i < 7; i++) { setPin(cells, 24 + i, 18 + i); }
+    for (let i = 0; i < 9; i++) { setPin(cells, 30 + i, 24 - i); }
+  } else if (mg.result === 'wrong') {
+    // X
+    for (let i = 0; i < 12; i++) { setPin(cells, 24 + i, 14 + i); setPin(cells, 35 - i, 14 + i); }
+  }
+  return cells;
+}
 
-// Helper — convert Uint8Array (or array of bytes) to uppercase hex string.
-// SDK expects displayGraphicData to receive a hex string ("FFAABB..."), not a byte array.
+function petDotPattern() {
+  const cells = new Uint8Array(DP_W * DP_H);
+  if (!state.pet) return cells;
+  const p = state.pet;
+  const stage = computeStage();
+  const mood = getMoodKey(p);
+  drawPet(cells, stage, p.asleep, mood);
+  drawHud(cells, p);
+  return cells;
+}
+
+// Helper — convert Uint8Array to uppercase hex string (SDK expects hex).
 function bytesToHex(bytes) {
   let out = '';
-  for (let i = 0; i < bytes.length; i++) {
-    out += bytes[i].toString(16).padStart(2, '0').toUpperCase();
-  }
+  for (let i = 0; i < bytes.length; i++) out += bytes[i].toString(16).padStart(2, '0').toUpperCase();
   return out;
+}
+
+// Trigger a transient action overlay on the pad (1.5s default).
+function triggerDpAction(action, durationMs = 1500) {
+  state.dpAction = action;
+  state.dpActionUntil = Date.now() + durationMs;
+  renderDotpad();
+  setTimeout(() => {
+    if (state.dpActionUntil && Date.now() >= state.dpActionUntil - 10) {
+      state.dpAction = null;
+      state.dpActionUntil = 0;
+      renderDotpad();
+    }
+  }, durationMs + 50);
 }
 
 function renderDotpad() {
   if (!state.dotpadConnected || !window.DotPad) return;
   try {
-    const cells = petDotPattern();              // Uint8Array(300) — 30×10
-    const hex = bytesToHex(cells);              // 600-char hex string
-    const { sdk } = window.DotPad;
-    sdk.displayGraphicData(hex);                // device=null → all connected
-    // Brief text line — pet name + stage (best-effort; some devices ignore text)
-    if (state.pet) {
-      const p = state.pet;
-      const stage = computeStage();
-      const stageLbl = stage === 'adult'
-        ? (T()['stageAdult' + (p.adultType[0].toUpperCase() + p.adultType.slice(1))])
-        : (T()['stage' + stage[0].toUpperCase() + stage.slice(1)]);
-      const textLine = `${p.name} - ${stageLbl}`;
-      try { sdk.displayTextData(textLine); } catch(e){ /* device may not support */ }
+    let cells;
+    let textLine = '';
+    const now = Date.now();
+    const mgOpen = state.mg && document.getElementById('mg-overlay')?.classList.contains('open');
+    if (state.dpAction && now < state.dpActionUntil) {
+      cells = actionDotPattern(state.dpAction);
+      textLine = String(state.dpAction).toUpperCase();
+    } else if (mgOpen) {
+      cells = minigameDotPattern();
+      textLine = state.mg.type === 'guess' ? 'GUESS' : 'RHYTHM';
+    } else {
+      if (state.dpAction && now >= state.dpActionUntil) { state.dpAction = null; state.dpActionUntil = 0; }
+      cells = petDotPattern();
+      if (state.pet) {
+        const stage = computeStage();
+        const stageLbl = stage === 'adult'
+          ? (T()['stageAdult' + (state.pet.adultType[0].toUpperCase() + state.pet.adultType.slice(1))])
+          : (T()['stage' + stage[0].toUpperCase() + stage.slice(1)]);
+        textLine = `${state.pet.name} - ${stageLbl}`;
+      }
     }
+    const hex = bytesToHex(cells);
+    const { sdk } = window.DotPad;
+    sdk.displayGraphicData(hex);
+    if (textLine) { try { sdk.displayTextData(textLine); } catch(e){} }
   } catch(e) { console.warn('[dotpad] render failed:', e); }
 }
 
@@ -2642,7 +2851,7 @@ function startMinigame() {
 function startGuess() {
   const overlay = document.getElementById('mg-overlay');
   const target = 1 + Math.floor(Math.random() * 4);
-  state.mg = { type: 'guess', target, attempts: 0 };
+  state.mg = { type: 'guess', target, attempts: 0, activePad: null, result: null };
   document.getElementById('mg-title').textContent = T().mgGuessTitle;
   document.getElementById('mg-sub').textContent = T().mgGuessSub(state.pet.name);
   document.getElementById('mg-display').textContent = '?';
@@ -2654,16 +2863,20 @@ function startGuess() {
   });
   overlay.classList.add('open');
   saySpeech(T().mgGuessSub(state.pet.name));
+  renderDotpad();
 }
 function guessNumber(n) {
   if (!state.mg || state.mg.type !== 'guess') return;
   state.mg.attempts++;
+  state.mg.activePad = n;
+  state.mg.result = null;
   SFX.click();
   const target = state.mg.target;
   const disp = document.getElementById('mg-display');
   if (n === target) {
     SFX.happy();
     disp.textContent = `🎉 ${target}!`;
+    state.mg.result = 'correct';
     state.pet.stats.happy = clamp(state.pet.stats.happy + 25);
     state.pet.stats.energy = clamp(state.pet.stats.energy - 10);
     recordAction(2);
@@ -2677,6 +2890,7 @@ function guessNumber(n) {
     if (state.mg.attempts >= 4) {
       SFX.bad();
       disp.textContent = '😅';
+      state.mg.result = 'wrong';
       state.pet.stats.happy = clamp(state.pet.stats.happy + 10);
       recordAction(1);
       saySpeech(T().mgGuessWrong(state.pet.name), { npc: true });
@@ -2684,11 +2898,14 @@ function guessNumber(n) {
     }
   }
   savePet(); renderAll();
+  renderDotpad();
+  // Clear active pad after a moment so subsequent rendering reverts to outlines
+  setTimeout(() => { if (state.mg) { state.mg.activePad = null; renderDotpad(); } }, 600);
 }
 function startRhythm() {
   const len = 3 + Math.floor(Math.random() * 2);  // 3-4 notes
   const seq = Array.from({ length: len }, () => 1 + Math.floor(Math.random() * 4));
-  state.mg = { type: 'rhythm', seq, input: [], step: 'listen' };
+  state.mg = { type: 'rhythm', seq, input: [], step: 'listen', activePad: null, result: null };
   document.getElementById('mg-title').textContent = T().mgRhythmTitle;
   document.getElementById('mg-sub').textContent = T().mgRhythmSub(state.pet.name);
   document.getElementById('mg-display').textContent = T().mgRhythmListen;
@@ -2699,19 +2916,28 @@ function startRhythm() {
   });
   document.getElementById('mg-overlay').classList.add('open');
   saySpeech(T().mgRhythmSub(state.pet.name) + ' ' + T().mgRhythmListen);
+  renderDotpad();
   // Play sequence
   setTimeout(() => {
     seq.forEach((n, i) => {
       setTimeout(() => {
         _tone(440 + n * 100, 0.25, 'sine', 0.1);
         document.getElementById('mg-display').textContent = '🔊 ' + n;
+        if (state.mg) { state.mg.activePad = n; renderDotpad(); }
       }, i * 600);
+      // Clear active pad between notes
+      setTimeout(() => {
+        if (state.mg) { state.mg.activePad = null; renderDotpad(); }
+      }, i * 600 + 350);
     });
     setTimeout(() => {
+      if (!state.mg) return;
       state.mg.step = 'input';
+      state.mg.activePad = null;
       document.getElementById('mg-display').textContent = '🎤';
       saySpeech(T().mgRhythmYourTurn);
       document.getElementById('mg-buttons').querySelectorAll('button').forEach(b => b.disabled = false);
+      renderDotpad();
     }, seq.length * 600 + 500);
   }, 700);
 }
@@ -2719,23 +2945,30 @@ function rhythmInput(n) {
   if (!state.mg || state.mg.type !== 'rhythm' || state.mg.step !== 'input') return;
   SFX.click();
   _tone(440 + n * 100, 0.18, 'sine', 0.1);
+  state.mg.activePad = n;
+  state.mg.result = null;
+  renderDotpad();
+  setTimeout(() => { if (state.mg) { state.mg.activePad = null; renderDotpad(); } }, 250);
   state.mg.input.push(n);
   const i = state.mg.input.length - 1;
   if (state.mg.input[i] !== state.mg.seq[i]) {
     // Wrong
     SFX.bad();
     document.getElementById('mg-display').textContent = '❌';
+    state.mg.result = 'wrong';
     state.pet.stats.happy = clamp(state.pet.stats.happy + 8);
     recordAction(1);
     saySpeech(T().mgRhythmLose(state.pet.name), { npc: true });
     setTimeout(() => closeMinigame(), 1600);
     savePet(); renderAll();
+    renderDotpad();
     return;
   }
   if (state.mg.input.length === state.mg.seq.length) {
     // Win
     SFX.happy();
     document.getElementById('mg-display').textContent = '✨';
+    state.mg.result = 'correct';
     state.pet.stats.happy = clamp(state.pet.stats.happy + 30);
     state.pet.stats.energy = clamp(state.pet.stats.energy - 10);
     recordAction(3);
@@ -2743,6 +2976,7 @@ function rhythmInput(n) {
     saySpeech(T().mgRhythmWin(state.pet.name), { npc: true });
     setTimeout(() => closeMinigame(), 1800);
     savePet(); renderAll();
+    renderDotpad();
   } else {
     document.getElementById('mg-display').textContent = '✓ ' + state.mg.input.length + '/' + state.mg.seq.length;
   }
@@ -2750,6 +2984,7 @@ function rhythmInput(n) {
 function closeMinigame() {
   document.getElementById('mg-overlay').classList.remove('open');
   state.mg = null;
+  renderDotpad();
 }
 
 // ============================================================
